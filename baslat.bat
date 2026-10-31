@@ -1,78 +1,92 @@
 @echo off
 rem ============================================================
 rem  BenzerFoto - kurulum ve çalıştırma betiği
-rem  Çift tıklamanız yeterli. İlk çalıştırmada:
-rem    1) Kodu GitHub'dan indirir (gerekirse)
-rem    2) Sanal ortamı (.venv) oluşturur
-rem    3) Bağımlılıkları kurar
+rem  Çift tıklamanız yeterli; Git ya da yönetici izni gerekmez.
+rem    1) Python yoksa kullanıcı hesabına kurar
+rem    2) Kodun son halini GitHub'dan zip olarak indirir
+rem    3) Sanal ortamı (.venv) ve bağımlılıkları kurar
 rem    4) Uygulamayı açar
-rem  Sonraki çalıştırmalarda güncellemeleri çeker ve doğrudan açar.
 rem ============================================================
 chcp 65001 >nul
 setlocal EnableExtensions
 
-set "REPO_URL=https://github.com/kutluger/benzerfoto"
 set "BRANCH=asama-2-gruplama"
+set "ZIP_URL=https://github.com/kutluger/benzerfoto/archive/refs/heads/%BRANCH%.zip"
+set "PY_VERSION=3.12.7"
+set "PY_URL=https://www.python.org/ftp/python/%PY_VERSION%/python-%PY_VERSION%-amd64.exe"
+set "APP_DIR=%USERPROFILE%\benzerfoto"
+set "WORK=%TEMP%\benzerfoto-kurulum"
 
-rem --- Proje klasörünü bul: betik proje içindeyse orası, değilse kullanıcı klasörü ---
-if exist "%~dp0benzerfoto\__init__.py" (
-    set "APP_DIR=%~dp0"
+rem --- 1) Python'u bul ---
+call :find_python
+if not defined PYTHON (
+    echo Python bulunamadı, kuruluyor. Bu birkaç dakika sürebilir...
+    if not exist "%WORK%" mkdir "%WORK%"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing '%PY_URL%' -OutFile '%WORK%\python-setup.exe'" || goto :error
+    rem Sessiz kurulum: yalnızca bu kullanıcıya, PATH'e ekle, py başlatıcısıyla birlikte
+    "%WORK%\python-setup.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_test=0 || goto :error
+    call :find_python
+)
+if not defined PYTHON (
+    echo [HATA] Python kurulamadı. https://www.python.org/downloads/ adresinden elle kurup
+    echo        kurulumda "Add python.exe to PATH" kutusunu işaretleyin.
+    goto :error
+)
+echo Python: %PYTHON%
+
+rem --- 2) Kodun son halini indir (internet yoksa mevcut kopyayla devam et) ---
+echo Kodun son hali indiriliyor...
+if exist "%WORK%\kod" rmdir /s /q "%WORK%\kod"
+mkdir "%WORK%\kod" 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing '%ZIP_URL%' -OutFile '%WORK%\kod.zip'; Expand-Archive -Force '%WORK%\kod.zip' '%WORK%\kod'"
+if errorlevel 1 (
+    if exist "%APP_DIR%\benzerfoto\__init__.py" (
+        echo [UYARI] İndirilemedi, bilgisayardaki mevcut sürüm açılacak.
+    ) else (
+        echo [HATA] Kod indirilemedi. İnternet bağlantınızı kontrol edin.
+        goto :error
+    )
 ) else (
-    set "APP_DIR=%USERPROFILE%\benzerfoto"
+    rem Zip içindeki klasörü proje klasörüne kopyala; .venv korunur
+    for /d %%D in ("%WORK%\kod\*") do robocopy "%%D" "%APP_DIR%" /E /NFL /NDL /NJH /NJS /NP /XD .venv >nul
 )
 
-rem --- Git var mı? ---
-where git >nul 2>nul
-if errorlevel 1 (
-    echo [HATA] Git bulunamadı. Kurmak için PowerShell'de şunu çalıştırın:
-    echo        winget install --id Git.Git -e
-    echo Kurulumdan sonra bu pencereyi kapatıp betiği yeniden çalıştırın.
-    pause
-    exit /b 1
-)
-
-rem --- Python var mı? (py başlatıcısı) ---
-where py >nul 2>nul
-if errorlevel 1 (
-    echo [HATA] Python bulunamadı. Kurmak için PowerShell'de şunu çalıştırın:
-    echo        winget install --id Python.Python.3.12 -e
-    echo Kurulumdan sonra bu pencereyi kapatıp betiği yeniden çalıştırın.
-    pause
-    exit /b 1
-)
-
-rem --- Kodu indir ya da güncelle ---
-if not exist "%APP_DIR%\.git" (
-    echo Kod indiriliyor: %APP_DIR%
-    git clone "%REPO_URL%" "%APP_DIR%" || goto :error
-)
 pushd "%APP_DIR%" || goto :error
-echo Güncellemeler kontrol ediliyor...
-git fetch origin "%BRANCH%" >nul 2>nul
-git checkout "%BRANCH%" >nul 2>nul || goto :error
-git pull --ff-only origin "%BRANCH%" >nul 2>nul
 
-rem --- Sanal ortam ---
+rem --- 3) Sanal ortam ve bağımlılıklar ---
 if not exist ".venv\Scripts\python.exe" (
     echo Sanal ortam oluşturuluyor...
-    py -3 -m venv .venv || goto :error
+    "%PYTHON%" -m venv .venv || goto :error
     del ".venv\.requirements-installed" >nul 2>nul
 )
-
-rem --- Bağımlılıklar: yalnızca requirements dosyaları değiştiyse yeniden kur ---
+rem requirements.txt değişmediyse kurulum atlanır
 fc /b requirements.txt ".venv\.requirements-installed" >nul 2>nul
 if errorlevel 1 (
-    echo Bağımlılıklar kuruluyor, bu ilk seferde birkaç dakika sürebilir...
+    echo Bağımlılıklar kuruluyor, ilk seferde birkaç dakika sürebilir...
     ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
     ".venv\Scripts\python.exe" -m pip install -r requirements-dev.txt || goto :error
     copy /y requirements.txt ".venv\.requirements-installed" >nul
 )
 
-rem --- Uygulamayı aç ---
+rem --- 4) Uygulamayı aç ---
 echo BenzerFoto açılıyor...
 ".venv\Scripts\python.exe" -m benzerfoto
 if errorlevel 1 goto :error
 popd
+exit /b 0
+
+rem ------------------------------------------------------------
+:find_python
+rem Önce py başlatıcısı, sonra kullanıcı kurulumu, sonra PATH'teki python.
+rem (Windows'un Microsoft Store kısayolu gerçek Python değildir, -c testiyle elenir.)
+set "PYTHON="
+for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON=%%P"
+if defined PYTHON exit /b 0
+for /d %%P in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+    if exist "%%P\python.exe" set "PYTHON=%%P\python.exe"
+)
+if defined PYTHON exit /b 0
+for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON=%%P"
 exit /b 0
 
 :error

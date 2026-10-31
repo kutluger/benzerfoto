@@ -17,10 +17,11 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 
 ## Kolay kurulum (Windows)
 
-`baslat.bat` dosyasını indirip çift tıklayın. Betik kodu `%USERPROFILE%\benzerfoto`
-klasörüne indirir, sanal ortamı ve bağımlılıkları kurar, uygulamayı açar. Sonraki
-çalıştırmalarda güncellemeleri çeker ve doğrudan açar. Git ve Python (`py`) kurulu
-olmalıdır; yoksa betik nasıl kurulacağını söyler.
+`baslat.bat` dosyasını indirip çift tıklayın. Git ya da yönetici izni gerekmez.
+Python yoksa kullanıcı hesabına kurar, kodun son halini zip olarak
+`%USERPROFILE%\benzerfoto` klasörüne indirir, sanal ortamı ve bağımlılıkları kurar,
+uygulamayı açar. Her çalıştırmada son sürümü indirir; bağımlılıkları yalnızca
+değiştiyse yeniden kurar.
 
 ## Elle kurulum (Windows)
 
