@@ -15,7 +15,14 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 | 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ⏳ |
 | 5 | Rapor, ayarlar, EXE paketleme | ⏳ |
 
-## Kurulum (Windows)
+## Kolay kurulum (Windows)
+
+`baslat.bat` dosyasını indirip çift tıklayın. Betik kodu `%USERPROFILE%\benzerfoto`
+klasörüne indirir, sanal ortamı ve bağımlılıkları kurar, uygulamayı açar. Sonraki
+çalıştırmalarda güncellemeleri çeker ve doğrudan açar. Git ve Python (`py`) kurulu
+olmalıdır; yoksa betik nasıl kurulacağını söyler.
+
+## Elle kurulum (Windows)
 
 Python 3.11 veya üstü gerekir.
 
