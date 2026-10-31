@@ -3,6 +3,7 @@
 Örnekler:
     python -m benzerfoto scan "D:\\Fotoğraflar" --exclude "D:\\Fotoğraflar\\Albümler"
     python -m benzerfoto info
+    python -m benzerfoto            (görsel arayüz)
 """
 
 from __future__ import annotations
@@ -16,17 +17,8 @@ from pathlib import Path
 from benzerfoto import __version__
 from benzerfoto.cache import FeatureCache
 from benzerfoto.config import default_db_path
+from benzerfoto.formatting import format_size
 from benzerfoto.scanner import ScanProgress, default_workers, scan
-
-
-def _format_size(num_bytes: float) -> str:
-    """Bayt değerini okunabilir biçime çevirir (örn. 3,4 MB)."""
-    for unit in ("B", "KB", "MB", "GB"):
-        if num_bytes < 1024 or unit == "GB":
-            text = f"{num_bytes:.1f}" if unit != "B" else f"{int(num_bytes)}"
-            return f"{text.replace('.', ',')} {unit}"
-        num_bytes /= 1024
-    return f"{num_bytes} TB"
 
 
 def _print_progress(p: ScanProgress) -> None:
@@ -82,7 +74,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
         result = outcome["result"]
 
         print()
-        print(f"Toplam dosya      : {result.total_files} ({_format_size(result.total_bytes)})")
+        print(f"Toplam dosya      : {result.total_files} ({format_size(result.total_bytes)})")
         print(f"Önbellekten       : {result.from_cache}")
         print(f"Yeni işlenen      : {result.processed}")
         print(f"Okunamayan        : {result.failed}")
@@ -123,6 +115,13 @@ def cmd_info(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    # PySide6 yalnızca arayüz açılırken yüklenir; komut satırı onsuz da çalışır
+    from benzerfoto.gui.app import run
+
+    return run(args.db)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="benzerfoto", description="Benzer ve kopya fotoğraf bulucu (komut satırı)"
@@ -131,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db", type=Path, default=default_db_path(), help="önbellek veritabanı yolu"
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
     p_scan = sub.add_parser("scan", help="klasörleri tara ve önbelleği güncelle")
     p_scan.add_argument("roots", nargs="+", help="taranacak klasörler")
@@ -143,6 +142,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_info = sub.add_parser("info", help="önbellek özetini göster")
     p_info.set_defaults(func=cmd_info)
+
+    p_gui = sub.add_parser("gui", help="görsel arayüzü aç (varsayılan)")
+    p_gui.set_defaults(func=cmd_gui)
     return parser
 
 
@@ -154,4 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
     args = build_parser().parse_args(argv)
+    if args.command is None:
+        # Komut verilmezse arayüz açılır: python -m benzerfoto
+        return cmd_gui(args)
     return args.func(args)

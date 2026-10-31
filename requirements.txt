@@ -3,8 +3,8 @@ Pillow>=10.0
 pillow-heif>=0.16
 ImageHash>=4.3
 numpy>=1.26
+PySide6>=6.6
 
 # Sonraki aşamalarda eklenecekler:
-# PySide6        (3. aşama: arayüz)
 # send2trash     (4. aşama: geri dönüşüm kutusu)
 # pyinstaller    (5. aşama: EXE paketleme)

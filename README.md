@@ -10,8 +10,8 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 | Aşama | İçerik | Durum |
 |---|---|---|
 | 1 | Tarama motoru + SQLite önbellek (komut satırı) | ✅ |
-| 2 | Gruplama: kopya / benzer / aynı sahne, en iyiyi önerme | ⏳ |
-| 3 | PySide6 arayüzü | ⏳ |
+| 2 | Gruplama: kopya / benzer / aynı sahne, en iyiyi önerme | ✅ |
+| 3 | PySide6 arayüzü | ✅ |
 | 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ⏳ |
 | 5 | Rapor, ayarlar, EXE paketleme | ⏳ |
 
@@ -27,7 +27,36 @@ py -m venv .venv
 pip install -r requirements-dev.txt
 ```
 
-## Komut satırından kullanım (1. aşama)
+## Uygulamayı açma
+
+```powershell
+python -m benzerfoto
+```
+
+1. **+ Ekle** ile taranacak klasörleri seçin. **Hariç tut** taranmayacak alt klasörü,
+   **Koru** ise içindeki fotoğrafların asla işaretlenmeyeceği klasörü ekler.
+2. Bulma modunu seçin, **TARA**'ya basın. Mod düğmelerinde her modun grup sayısı görünür.
+3. Eşik kaydırıcısı ve zaman penceresi değiştikçe gruplar yeniden tarama yapmadan
+   hesaplanır.
+4. Ortadaki listeden bir grup seçin. ★ önerilen kare korunur, diğerleri kırmızı işaretle
+   "ayrılacak" olarak gelir. Kartın kutusuna tıklayarak (ya da Boşluk tuşuyla) işareti
+   değiştirebilir, sağ tıklayıp **Bunu tut** ile öneriyi değiştirebilirsiniz.
+5. Fare tekerleği önizlemeyi yakınlaştırır, çift tık pencereye sığdırır.
+   Gruplar arasında **Ctrl+←/→** ile gezinilir.
+
+Taşıma / Geri Dönüşüm / Geri Al düğmeleri 4. aşamada çalışır hale gelecek.
+
+### Eşikler
+
+| Mod | Varsayılan | Anlamı |
+|---|---|---|
+| Benzer görüntü | %88 (8 bit) | Farklı boyut/format, hafif düzenleme |
+| Aynı sahne | %72 (18 bit) + 60 sn | Elle tekrar çekim, kıpırdanma ve küçük kadraj farkı |
+
+Yüzde arttıkça eşleşme katılaşır. Aynı sahne modunda iki karenin EXIF çekim zamanları
+arasında en fazla seçilen süre kadar fark olmalıdır.
+
+## Komut satırından kullanım
 
 ```powershell
 # Bir ya da birden fazla klasörü tara (alt klasörler dahil)
@@ -68,6 +97,9 @@ benzerfoto/
   features.py   bir fotoğraftan hash, pHash/dHash, EXIF, netlik çıkarma
   cache.py      SQLite önbellek
   scanner.py    tarama motoru (çok çekirdekli, ilerleme, iptal)
+  grouping.py   kopya / benzer / aynı sahne gruplama, en iyiyi önerme
+  formatting.py Türkçe boyut ve tarih biçimleri
   cli.py        komut satırı aracı
+  gui/          PySide6 arayüzü (ana pencere, bileşenler, stil, arka plan işleri)
 tests/          pytest testleri
 ```
