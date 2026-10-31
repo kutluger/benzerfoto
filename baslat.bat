@@ -64,11 +64,15 @@ fc /b requirements.txt ".venv\.requirements-installed" >nul 2>nul
 if errorlevel 1 (
     echo Bağımlılıklar kuruluyor, ilk seferde birkaç dakika sürebilir...
     ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
-    ".venv\Scripts\python.exe" -m pip install -r requirements-dev.txt || goto :error
+    ".venv\Scripts\python.exe" -m pip install --upgrade -r requirements-dev.txt || goto :error
     copy /y requirements.txt ".venv\.requirements-installed" >nul
 )
 
-rem --- 4) Uygulamayı aç ---
+rem --- 4) Paketler yüklenebiliyor mu? (Windows güvenlik engellerini yakalar) ---
+".venv\Scripts\python.exe" -m benzerfoto.doctor
+if errorlevel 1 goto :error
+
+rem --- 5) Uygulamayı aç ---
 echo BenzerFoto açılıyor...
 ".venv\Scripts\python.exe" -m benzerfoto
 if errorlevel 1 goto :error

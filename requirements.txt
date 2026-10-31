@@ -1,9 +1,14 @@
 # Çalışma bağımlılıkları
-Pillow>=10.0
-pillow-heif>=0.16
-ImageHash>=4.3
-numpy>=1.26
-PySide6>=6.6
+# Sürümler sabitlendi: Windows 11 Akıllı Uygulama Denetimi, yeni çıkmış ve henüz
+# "tanınmayan" DLL'leri engelleyebiliyor. Bir süredir yaygın kullanılan sürümler
+# bu engele daha az takılır.
+numpy==2.2.6
+scipy==1.15.3
+PyWavelets==1.8.0
+Pillow==11.3.0
+pillow-heif==0.22.0
+ImageHash==4.3.1
+PySide6==6.8.3
 
 # Sonraki aşamalarda eklenecekler:
 # send2trash     (4. aşama: geri dönüşüm kutusu)
