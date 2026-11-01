@@ -161,5 +161,7 @@ def test_end_to_end_modes(tmp_path: Path):
     scenes = build_groups(feats, GroupKind.SCENE)
     (scene,) = [g for g in scenes if any("sahne" in m.path for m in g.members)]
     assert len(scene.members) == 4
-    assert not scene.best_path.endswith("IMG_1.jpg")  # bulanık kare önerilmez
-    assert any(m.path.endswith("IMG_1.jpg") for m in scene.members if m.path in scene.marked)
+    # Windows'ta yollar küçük harfe çevrildiği için ad karşılaştırması harf duyarsız
+    blurry = next(m.path for m in scene.members if Path(m.path).name.lower() == "img_1.jpg")
+    assert scene.best_path != blurry  # bulanık kare önerilmez
+    assert blurry in scene.marked
