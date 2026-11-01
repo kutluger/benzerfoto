@@ -140,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--settings-file",
         type=Path,
         default=None,
-        help="ayarları kayıt defteri yerine bu INI dosyasında tut (taşınabilir kullanım)",
+        help="ayarları kayıt defteri yerine bu INI dosyasında tut (yalnızca arayüz için; taşınabilir kullanım)",
     )
     sub = parser.add_subparsers(dest="command")
 

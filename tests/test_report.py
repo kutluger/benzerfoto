@@ -6,6 +6,7 @@ import csv
 import re
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from benzerfoto.cache import FeatureCache
@@ -19,6 +20,7 @@ from benzerfoto.report import (
     make_thumbnail_data_uri,
     write_csv,
     write_html,
+    write_report,
 )
 from benzerfoto.scanner import scan
 from tests.conftest import make_scene, save_jpeg
@@ -99,3 +101,25 @@ def test_thumbnail_is_small(tmp_path: Path):
     assert uri is not None and uri.startswith("data:image/jpeg;base64,")
     assert len(uri) < 20_000
     assert make_thumbnail_data_uri(str(tmp_path / "yok.jpg")) is None
+
+
+def test_write_report_picks_format_by_extension(tmp_path: Path):
+    groups = _groups(tmp_path)
+    for name, is_csv in (("a.CSV", True), ("b.HTML", False), ("c.htm", False)):
+        out = tmp_path / name
+        assert write_report(groups, out) == 3
+        assert out.read_bytes().startswith(b"\xef\xbb\xbf") == is_csv
+    empty = tmp_path / "bos.html"
+    assert write_report([], empty) == 0 and "<html" in empty.read_text(encoding="utf-8")
+
+
+def test_failed_write_leaves_no_partial_file(tmp_path: Path):
+    groups = _groups(tmp_path)
+    out = tmp_path / "rapor.html"
+
+    def broken(_path):
+        raise RuntimeError("disk dolu")
+
+    with pytest.raises(RuntimeError):
+        write_html(groups, out, thumbnail=broken)
+    assert list(tmp_path.glob("rapor.html*")) == []

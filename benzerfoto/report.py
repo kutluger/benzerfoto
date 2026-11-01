@@ -12,10 +12,12 @@ import csv
 import html
 import io
 import os
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TextIO
 
 from PIL import Image, ImageOps
 
@@ -89,6 +91,18 @@ def build_rows(groups: Sequence[PhotoGroup]) -> list[ReportRow]:
     return rows
 
 
+@contextmanager
+def _atomic_write(path: str | os.PathLike, **open_args) -> Iterator[TextIO]:
+    """Önce geçici dosyaya yazar, bitince yerine koyar: hata olursa yarım rapor kalmaz."""
+    tmp = Path(f"{os.fspath(path)}.tmp")
+    try:
+        with open(tmp, "w", **open_args) as f:
+            yield f
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def write_csv(groups: Sequence[PhotoGroup], path: str | os.PathLike) -> int:
     """CSV yazar ve satır sayısını döndürür.
 
@@ -96,7 +110,7 @@ def write_csv(groups: Sequence[PhotoGroup], path: str | os.PathLike) -> int:
     tanıması içindir.
     """
     rows = build_rows(groups)
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+    with _atomic_write(path, encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(CSV_HEADER)
         for r in rows:
@@ -121,6 +135,8 @@ def make_thumbnail_data_uri(path: str, size: int = THUMB_SIZE) -> str | None:
 
 
 _STATUS_CLASS = {STATUS_BEST: "best", STATUS_MARKED: "marked", STATUS_PROTECTED: "protected", STATUS_KEEP: "keep"}
+
+_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
 
 _CSS = """
 body{font-family:"Segoe UI",system-ui,sans-serif;margin:0;background:#f5f5f7;color:#222}
@@ -170,28 +186,31 @@ def write_html(
     notify = progress or (lambda _d, _t: None)
     marked_files = sum(len(g.marked) for g in groups)
     marked_size = sum(g.marked_size for g in groups)
-    parts = [
-        '<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>BenzerFoto raporu</title><style>{_CSS}</style></head><body>",
-        "<header><h1>BenzerFoto raporu</h1>",
-        f'<div class="meta">{datetime.now():%d.%m.%Y %H:%M} · {format_count(len(groups))} grup · '
-        f"{format_count(total)} dosya · işaretli: {format_count(marked_files)} dosya ({format_size(marked_size)})"
-        f" · BenzerFoto {__version__}</div></header><main>",
-    ]
-    done = 0
-    for no, group in enumerate(groups, start=1):
-        parts.append(
-            f"<section><h2>Grup #{no} · {html.escape(group.kind.label)} "
-            f"<small>{len(group.members)} fotoğraf · {format_size(group.total_size)}</small></h2><div class=\"cards\">"
+    # Büyük arşivlerde rapor yüzlerce MB olabilir: bellekte toplanmaz, dosyaya akıtılır
+    with _atomic_write(path, encoding="utf-8") as f:
+        f.write(
+            '<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            # Sayfa hiçbir dış kaynak ya da betik yükleyemez; yalnızca gömülü görseller
+            f'<meta http-equiv="Content-Security-Policy" content="{_CSP}">'
+            f"<title>BenzerFoto raporu</title><style>{_CSS}</style></head><body>"
+            "<header><h1>BenzerFoto raporu</h1>"
+            f'<div class="meta">{datetime.now():%d.%m.%Y %H:%M} · {format_count(len(groups))} grup · '
+            f"{format_count(total)} dosya · işaretli: {format_count(marked_files)} dosya ({format_size(marked_size)})"
+            f" · BenzerFoto {__version__}</div></header><main>"
         )
-        for m in ordered_members(group):
-            parts.append(_card(m, group, thumbnail(m.path)))
-            done += 1
-            notify(done, total)
-        parts.append("</div></section>")
-    parts.append("</main></body></html>")
-    Path(path).write_text("".join(parts), encoding="utf-8")
+        done = 0
+        for no, group in enumerate(groups, start=1):
+            f.write(
+                f"<section><h2>Grup #{no} · {html.escape(group.kind.label)} "
+                f"<small>{len(group.members)} fotoğraf · {format_size(group.total_size)}</small></h2><div class=\"cards\">"
+            )
+            for m in ordered_members(group):
+                f.write(_card(m, group, thumbnail(m.path)))
+                done += 1
+                notify(done, total)
+            f.write("</div></section>")
+        f.write("</main></body></html>")
     return total
 
 

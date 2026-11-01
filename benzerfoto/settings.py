@@ -17,7 +17,44 @@ from benzerfoto.grouping import (
 )
 from benzerfoto.scanner import default_workers
 
+SETTINGS_VERSION = 3
+# 0.4'te yalnızca son kullanılan değer saklanıyordu: yeni anahtar → eski anahtar
+_OLD_KEYS = {
+    "default_threshold_similar": "threshold_similar",
+    "default_threshold_scene": "threshold_scene",
+    "default_window_seconds": "window_seconds",
+}
 WINDOW_CHOICES = [10, 30, 60, 120, 300]
+
+
+def _read_int(store, key: str, fallback: int) -> int:
+    """Elle düzenlenmiş ya da bozuk değerlerde çökmeden varsayılana döner."""
+    if not store.contains(key):
+        return fallback
+    try:
+        return round(float(store.value(key)))
+    except (TypeError, ValueError, OverflowError):
+        return fallback
+
+
+def migrate_settings(store) -> None:
+    """Eski ayar anahtarlarını bir kez yenilerine taşır.
+
+    Yalnızca kullanıcının kaydettiği değerler devralınır; fabrika değerleri yazılmaz,
+    böylece ileride değişen bir varsayılan, ayarı hiç değiştirmemiş kullanıcıya da ulaşır.
+    """
+    version = _read_int(store, "settings_version", 1)
+    if version >= SETTINGS_VERSION:
+        return
+    if version < 2:
+        # 2. sürüm: Benzer modunun varsayılanı %80 oldu, eski değer devralınmaz
+        store.remove("threshold_similar")
+    for new_key, old_key in _OLD_KEYS.items():
+        if store.contains(old_key):
+            if not store.contains(new_key):
+                store.setValue(new_key, store.value(old_key))
+            store.remove(old_key)
+    store.setValue("settings_version", SETTINGS_VERSION)
 THRESHOLD_RANGE = (50, 100)
 MAX_WORKERS = 64
 
@@ -37,21 +74,11 @@ class AppSettings:
         """Kayıtlı değerleri okur; geçersiz ya da eksik olanlar varsayılana döner."""
         d = cls()
 
-        def read_int(key: str, old_key: str | None, fallback: int) -> int:
-            # 0.4'te yalnızca son kullanılan değer vardı (old_key); varsa onu devral
-            for k in (key, old_key):
-                if k and store.contains(k):
-                    try:
-                        return round(float(store.value(k)))
-                    except (TypeError, ValueError):
-                        return fallback
-            return fallback
-
         lo, hi = THRESHOLD_RANGE
-        similar = read_int("default_threshold_similar", "threshold_similar", d.similar_threshold)
-        scene = read_int("default_threshold_scene", "threshold_scene", d.scene_threshold)
-        window = read_int("default_window_seconds", "window_seconds", d.scene_window)
-        workers = read_int("workers", None, d.workers)
+        similar = _read_int(store, "default_threshold_similar", d.similar_threshold)
+        scene = _read_int(store, "default_threshold_scene", d.scene_threshold)
+        window = _read_int(store, "default_window_seconds", d.scene_window)
+        workers = _read_int(store, "workers", d.workers)
         return cls(
             similar_threshold=similar if lo <= similar <= hi else d.similar_threshold,
             scene_threshold=scene if lo <= scene <= hi else d.scene_threshold,

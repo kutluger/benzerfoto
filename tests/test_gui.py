@@ -189,3 +189,31 @@ def test_settings_dialog_values(app):
     assert dlg.values() == AppSettings(similar_threshold=85, scene_window=300, workers=4)
     dlg.set_values(AppSettings())
     assert dlg.values() == AppSettings()
+
+
+def test_report_disabled_during_scan_and_failure_is_reported(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import QThreadPool
+
+    from benzerfoto import report
+
+    w = _window_with_group(app, tmp_path, monkeypatch)
+    # Tarama sürerken rapor alınmaz (DURDUR düğmesinin durumu bozulmasın)
+    w.scan_thread = object()
+    w._update_action_buttons()
+    assert not w.report_button.isEnabled()
+    w.export_report_to(str(tmp_path / "olmamali.html"))
+    assert not w._busy and not (tmp_path / "olmamali.html").exists()
+    w.scan_thread = None
+    w._update_action_buttons()
+    assert w.report_button.isEnabled()
+
+    # Yazma hatası: kullanıcıya doğru ipucu gösterilir, arayüz kilitli kalmaz
+    shown = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "critical", staticmethod(lambda *a, **k: shown.append(a[2])))
+    monkeypatch.setattr(report, "write_report", lambda *a, **k: (_ for _ in ()).throw(OSError("erişim engellendi")))
+    w.export_report_to(str(tmp_path / "rapor.html"))
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    assert shown and "Rapor kaydedilemedi" in shown[0]
+    assert not w._busy and w.report_button.isEnabled()
+    w.close()

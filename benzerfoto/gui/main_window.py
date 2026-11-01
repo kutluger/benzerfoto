@@ -62,7 +62,7 @@ from benzerfoto.gui.widgets import (
     ThumbnailGrid,
     scene_time_range,
 )
-from benzerfoto.settings import WINDOW_CHOICES, AppSettings
+from benzerfoto.settings import WINDOW_CHOICES, AppSettings, migrate_settings
 
 # Klasör listesindeki satır türleri
 ROLE_KIND = Qt.ItemDataRole.UserRole + 1
@@ -70,7 +70,9 @@ FOLDER_SCAN, FOLDER_EXCLUDE, FOLDER_PROTECT = "scan", "exclude", "protect"
 FOLDER_ICONS = {FOLDER_SCAN: "📁", FOLDER_EXCLUDE: "🚫", FOLDER_PROTECT: "🛡"}
 
 FORMATS = [("JPG", (".jpg", ".jpeg")), ("HEIC", (".heic", ".heif")), ("PNG", (".png",)), ("WEBP", (".webp",))]
-SORT_CHOICES = ["En çok yer kazandıran", "En kalabalık", "Tarihe göre (yeni → eski)"]
+REPORT_FILTER_HTML = "HTML raporu, küçük resimli (*.html)"
+REPORT_FILTER_CSV = "CSV tablosu, Excel için (*.csv)"
+SORT_CHOICES =["En çok yer kazandıran", "En kalabalık", "Tarihe göre (yeni → eski)"]
 
 
 def section_title(text: str) -> QLabel:
@@ -88,6 +90,7 @@ class MainWindow(QMainWindow):
         # Uygulama/kuruluş adı app.py'de "BenzerFoto" olarak verilir; testler
         # geçici bir INI dosyası verip gerçek ayarlara dokunmaz.
         self.settings = settings if settings is not None else QSettings()
+        migrate_settings(self.settings)
         self.app_settings = AppSettings.load(self.settings)
 
         self.features: list[ImageFeatures] = []
@@ -1133,22 +1136,24 @@ class MainWindow(QMainWindow):
 
     def _export_report(self) -> None:
         groups = self.report_groups()
-        if self._busy or not groups:
+        if not self._is_idle() or not groups:
             return
         folder = Path(self.settings.value("report_dir", str(Path.home())))
         start = str(folder / f"BenzerFoto-rapor-{self.current_kind().value}")
         path, selected = QFileDialog.getSaveFileName(
-            self, "Raporu kaydet", start, "HTML raporu, küçük resimli (*.html);;CSV tablosu, Excel için (*.csv)"
+            self, "Raporu kaydet", start, f"{REPORT_FILTER_HTML};;{REPORT_FILTER_CSV}"
         )
         if not path:
             return
         if Path(path).suffix.lower() not in (".html", ".htm", ".csv"):
-            path += ".csv" if "csv" in selected else ".html"
+            path += ".csv" if selected == REPORT_FILTER_CSV else ".html"
         self.settings.setValue("report_dir", str(Path(path).parent))
         self.export_report_to(path, groups)
 
     def export_report_to(self, path: str, groups: list[PhotoGroup] | None = None) -> None:
-        """Raporu arka planda yazar; bitince haber verir."""
+        """Raporu arka planda yazar; bitince haber verir. Tarama ya da işlem sürerken çalışmaz."""
+        if not self._is_idle():
+            return
         groups = self.report_groups() if groups is None else groups
         self._start_job(
             "Rapor hazırlanıyor…",
@@ -1204,14 +1209,18 @@ class MainWindow(QMainWindow):
         )
         self._update_action_buttons(all_files)
 
+    def _is_idle(self) -> bool:
+        """Ne tarama ne de dosya/rapor işi sürüyor."""
+        return not self._busy and self.scan_thread is None
+
     def _update_action_buttons(self, marked_count: int | None = None) -> None:
         if marked_count is None:
             marked_count = sum(len(g.marked) for g in self.groups_by_kind[self.current_kind()])
-        idle = not self._busy and self.scan_thread is None
+        idle = self._is_idle()
         for b in (self.move_button, self.trash_button):
             b.setEnabled(idle and marked_count > 0)
         self.history_button.setEnabled(not self._busy)
-        self.report_button.setEnabled(not self._busy and bool(self.groups_by_kind[self.current_kind()]))
+        self.report_button.setEnabled(idle and bool(self.groups_by_kind[self.current_kind()]))
         self.undo_button.setEnabled(idle and self._last_undoable is not None)
 
     def _update_cache_status(self) -> None:
@@ -1242,8 +1251,7 @@ class MainWindow(QMainWindow):
             if kind in FOLDER_ICONS and path:
                 self._append_folder(path, kind)
         self.recursive_box.setChecked(s.value("recursive", True, type=bool))
-        self._migrate_settings()
-        mode = s.value("mode", GroupKind.SCENE.value)
+        mode =s.value("mode", GroupKind.SCENE.value)
         for kind, btn in self.mode_buttons.items():
             if kind.value == mode:
                 btn.setChecked(True)
@@ -1254,23 +1262,6 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geometry)
         self._update_rule_status()
         self._update_cache_status()
-
-    def _migrate_settings(self) -> None:
-        """Ayar sürümü 3: son kullanılan eşik/pencere yerine Ayarlar'daki varsayılanlar.
-
-        0.4'teki son değerler varsayılan olarak bir kez devralınır, eski anahtarlar silinir.
-        """
-        s = self.settings
-        version = s.value("settings_version", 1, type=int)
-        if version >= 3:
-            return
-        if version < 2:
-            # 2. sürüm: Benzer modunun varsayılanı %80 oldu, eski değer devralınmaz
-            s.remove(f"threshold_{GroupKind.SIMILAR.value}")
-        self.apply_app_settings(AppSettings.load(s))
-        for key in ("threshold_similar", "threshold_scene", "window_seconds"):
-            s.remove(key)
-        s.setValue("settings_version", 3)
 
     def _save_settings(self) -> None:
         s = self.settings
