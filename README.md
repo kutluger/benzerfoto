@@ -12,7 +12,7 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 | 1 | Tarama motoru + SQLite önbellek (komut satırı) | ✅ |
 | 2 | Gruplama: kopya / benzer / aynı sahne, en iyiyi önerme | ✅ |
 | 3 | PySide6 arayüzü | ✅ |
-| 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ⏳ |
+| 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ✅ |
 | 5 | Rapor, ayarlar, EXE paketleme | ⏳ |
 
 ## Kolay kurulum (Windows)
@@ -52,13 +52,25 @@ python -m benzerfoto
 5. Fare tekerleği önizlemeyi yakınlaştırır, çift tık pencereye sığdırır.
    Gruplar arasında **Ctrl+←/→** ile gezinilir.
 
-Taşıma / Geri Dönüşüm / Geri Al düğmeleri 4. aşamada çalışır hale gelecek.
+6. Alttaki **📦 _benzerler klasörüne taşı** ya da **🗑 Geri Dönüşüm Kutusu'na gönder** ile işaretli
+   dosyaları ayırın. Önce **tüm gruplar** mı yoksa **yalnızca bu grup** mu olduğu sorulur.
+   - Taşıma: dosya, bulunduğu tarama klasörünün içindeki `_benzerler` klasörüne alt klasör
+     yapısı korunarak taşınır (`D:\Foto\2020\a.jpg` → `D:\Foto\_benzerler\2020\a.jpg`).
+     Aynı adlı dosya varsa üzerine yazılmaz, `a (2).jpg` olarak taşınır.
+   - Geri Dönüşüm Kutusu yalnızca sabit yerel sürücülerde kullanılır; ağ ve USB sürücülerinde
+     Windows dosyayı kalıcı sileceği için işlem yapılmaz. Kutuya sığmayan bir dosya olursa
+     Windows ayrıca sorar.
+   - Tüm fotoğrafları işaretli gruplar atlanır, korunan klasördeki dosyalar hiçbir zaman işlenmez.
+7. **↶ Geri Al** son işlemi geri alır: dosyalar özgün yerlerine döner (kutuya gönderilenler de,
+   kutu boşaltılmadıysa). Özgün yerde aynı adlı dosya varsa o dosya atlanır, geri alma daha
+   sonra tekrar denenebilir. **🕘 Geçmiş** penceresi tüm işlemleri dosya dosya listeler ve
+   istenen işlemi geri almayı sağlar. Günlük, önbellekle aynı veritabanında tutulur.
 
 ### Eşikler
 
 | Mod | Varsayılan | Anlamı |
 |---|---|---|
-| Benzer görüntü | %88 (8 bit) | Farklı boyut/format, hafif düzenleme |
+| Benzer görüntü | %80 (13 bit) | Farklı boyut/format, hafif düzenleme. Denemelerde en kararlı değer: %60'ta alakasız fotoğraflar eşleşiyor, %80'in üstünde çok benzeyenler kaçıyor |
 | Aynı sahne | %72 (18 bit) + 60 sn | Elle tekrar çekim, kıpırdanma ve küçük kadraj farkı |
 
 Yüzde arttıkça eşleşme katılaşır. Aynı sahne modunda iki karenin EXIF çekim zamanları
@@ -106,6 +118,9 @@ benzerfoto/
   cache.py      SQLite önbellek
   scanner.py    tarama motoru (çok çekirdekli, ilerleme, iptal)
   grouping.py   kopya / benzer / aynı sahne gruplama, en iyiyi önerme
+  actions.py    _benzerler'e taşıma, Geri Dönüşüm Kutusu, geri alma
+  journal.py    işlem günlüğü (SQLite)
+  recycle.py    Windows Geri Dönüşüm Kutusu'na gönderme ve geri yükleme
   formatting.py Türkçe boyut ve tarih biçimleri
   cli.py        komut satırı aracı
   gui/          PySide6 arayüzü (ana pencere, bileşenler, stil, arka plan işleri)

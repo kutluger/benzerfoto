@@ -20,7 +20,9 @@ from benzerfoto.discovery import is_under, normalize_path
 from benzerfoto.features import ImageFeatures
 
 # Varsayılan eşikler (64 bitlik hash'lerde farklı bit sayısı)
-DEFAULT_SIMILAR_DISTANCE = 8  # farklı boyut/format, hafif düzenleme
+# Benzer: 13 bit ≈ %80. Denemelerde en kararlı sonuç: %60'ta alakasız
+# fotoğraflar eşleşiyor, %80'in üstünde çok benzeyenler kaçıyor.
+DEFAULT_SIMILAR_DISTANCE = 13  # farklı boyut/format, hafif düzenleme
 DEFAULT_SCENE_DISTANCE = 18  # elle tekrar çekim: kıpırdanma ve küçük kadraj farkları
 DEFAULT_SCENE_WINDOW_SECONDS = 60
 HASH_BITS = 64

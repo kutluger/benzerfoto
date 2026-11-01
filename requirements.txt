@@ -17,5 +17,6 @@ Pillow==11.3.0
 ImageHash==4.3.1
 
 # Sonraki aşamalarda eklenecekler:
-# send2trash     (4. aşama: geri dönüşüm kutusu)
+# (Geri Dönüşüm Kutusu için ek paket gerekmez: Windows'un kendi işlevi kullanılır,
+#  send2trash büyük dosyaları uyarmadan kalıcı silebildiği için tercih edilmedi.)
 # pyinstaller    (5. aşama: EXE paketleme)

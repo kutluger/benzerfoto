@@ -12,9 +12,10 @@ from benzerfoto.gui.style import STYLESHEET
 
 
 def run(db_path: Path | None = None) -> int:
+    # QSettings bu adları kullanır: ayarlar HKCU\Software\BenzerFoto\BenzerFoto altında
+    QApplication.setApplicationName("BenzerFoto")
+    QApplication.setOrganizationName("BenzerFoto")
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("BenzerFoto")
-    app.setOrganizationName("BenzerFoto")
     app.setStyle("Fusion")  # her Windows sürümünde aynı görünüm
     app.setStyleSheet(STYLESHEET)
     window = MainWindow(db_path)

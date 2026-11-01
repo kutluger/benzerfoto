@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressBar,
+    QProgressDialog,
     QPushButton,
     QRadioButton,
     QSlider,
@@ -35,8 +36,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from benzerfoto import __version__
-from benzerfoto.config import default_db_path
+from benzerfoto import __version__, actions, recycle
+from benzerfoto.cache import FeatureCache
+from benzerfoto.config import DUPLICATES_FOLDER_NAME, default_db_path
 from benzerfoto.features import ImageFeatures
 from benzerfoto.formatting import format_count, format_size
 from benzerfoto.grouping import (
@@ -49,9 +51,11 @@ from benzerfoto.grouping import (
     distance_to_similarity,
     similarity_to_distance,
 )
+from benzerfoto.gui.history import HistoryDialog
 from benzerfoto.gui.images import ThumbnailCache, load_qimage
+from benzerfoto.journal import KIND_MOVE, KIND_TRASH, Journal, Operation
 from benzerfoto.gui.style import TAG_COLORS
-from benzerfoto.gui.tasks import ScanThread, run_async
+from benzerfoto.gui.tasks import ProgressRelay, ScanThread, run_async
 from benzerfoto.gui.widgets import (
     DetailsPanel,
     GroupDelegate,
@@ -83,7 +87,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("BenzerFoto — Benzer ve Kopya Fotoğraf Bulucu")
         self.resize(1600, 980)
         self.db_path = Path(db_path) if db_path else default_db_path()
-        self.settings = QSettings("BenzerFoto", "BenzerFoto")
+        # Uygulama/kuruluş adı app.py'de "BenzerFoto" olarak verilir; testler
+        # kendi adlarını verip gerçek ayarlara dokunmaz.
+        self.settings = QSettings()
 
         self.features: list[ImageFeatures] = []
         self.groups_by_kind: dict[GroupKind, list[PhotoGroup]] = {k: [] for k in GroupKind}
@@ -95,9 +101,12 @@ class MainWindow(QMainWindow):
         self._preview_request = 0
         # Her modun kendi eşiği (benzerlik yüzdesi)
         self.thresholds = {
-            GroupKind.SIMILAR: distance_to_similarity(DEFAULT_SIMILAR_DISTANCE),
+            GroupKind.SIMILAR: float(round(distance_to_similarity(DEFAULT_SIMILAR_DISTANCE))),
             GroupKind.SCENE: distance_to_similarity(DEFAULT_SCENE_DISTANCE),
         }
+        self._busy = False  # dosya işlemi sürüyor mu
+        self._last_undoable: Operation | None = None
+        self._progress_dialog: QProgressDialog | None = None
 
         self.thumbs = ThumbnailCache(parent=self)
         self._regroup_timer = QTimer(self, singleShot=True, interval=300)
@@ -121,6 +130,7 @@ class MainWindow(QMainWindow):
 
         self._load_settings()
         self._update_mode_controls()
+        self._refresh_undo_state()
         self._show_group(None)
 
     # ------------------------------------------------------------------
@@ -178,6 +188,8 @@ class MainWindow(QMainWindow):
         lay.addSpacing(8)
         lay.addWidget(section_title("Benzerlik eşiği"))
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        # Tutamaç oluktan taşar; yükseklik verilmezse altı üstü kesik görünür
+        self.threshold_slider.setMinimumHeight(30)
         self.threshold_slider.setRange(50, 100)
         self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
         lay.addWidget(self.threshold_slider)
@@ -394,20 +406,25 @@ class MainWindow(QMainWindow):
         self.summary_label.setFont(f)
         lay.addWidget(self.summary_label)
         lay.addStretch(1)
-        later = "Bu işlem 4. aşamada eklenecek"
+        self.history_button = QPushButton("🕘 Geçmiş")
+        self.history_button.setToolTip("Yapılan taşıma ve geri dönüşüm işlemleri; istenen işlem geri alınabilir")
+        self.history_button.clicked.connect(self._show_history)
         self.undo_button = QPushButton("↶ Geri Al")
+        self.undo_button.clicked.connect(self._undo_last)
         self.report_button = QPushButton("📄 Rapor")
+        self.report_button.setEnabled(False)
+        self.report_button.setToolTip("Rapor 5. aşamada eklenecek")
         self.trash_button = QPushButton("🗑 Geri Dönüşüm Kutusu'na gönder")
-        self.move_button = QPushButton("📦 _benzerler klasörüne taşı")
+        self.trash_button.setToolTip("İşaretli dosyaları Geri Dönüşüm Kutusu'na gönderir (geri alınabilir)")
+        self.trash_button.clicked.connect(lambda: self._run_action(KIND_TRASH))
+        self.move_button = QPushButton(f"📦 {DUPLICATES_FOLDER_NAME} klasörüne taşı")
         self.move_button.setObjectName("primary")
-        for b, tip in (
-            (self.undo_button, later),
-            (self.report_button, "Rapor 5. aşamada eklenecek"),
-            (self.trash_button, later),
-            (self.move_button, later),
-        ):
-            b.setEnabled(False)
-            b.setToolTip(tip)
+        self.move_button.setToolTip(
+            f"İşaretli dosyaları tarama klasörünün içindeki {DUPLICATES_FOLDER_NAME} klasörüne, "
+            "alt klasör yapısını koruyarak taşır (geri alınabilir)"
+        )
+        self.move_button.clicked.connect(lambda: self._run_action(KIND_MOVE))
+        for b in (self.history_button, self.undo_button, self.report_button, self.trash_button, self.move_button):
             lay.addWidget(b)
         return bar
 
@@ -487,6 +504,8 @@ class MainWindow(QMainWindow):
             self.scan_button.setEnabled(False)
             self.progress_label.setText("Durduruluyor, çalışan işler bitiriliyor…")
             return
+        if self._busy:
+            return
         roots = self._folders(FOLDER_SCAN)
         if not roots:
             QMessageBox.information(self, "BenzerFoto", "Önce taranacak en az bir klasör ekleyin (+ Ekle).")
@@ -512,6 +531,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)  # belirsiz: dosyalar aranıyor
         self.progress_label.setText("Dosyalar aranıyor…")
         self.scan_thread.start()
+        self._update_action_buttons()
 
     def _on_scan_progress(self, phase: str, done: int, total: int) -> None:
         if phase == "discover":
@@ -553,6 +573,7 @@ class MainWindow(QMainWindow):
         self.scan_button.setText("🔍  TARA")
         self.scan_button.setProperty("running", False)
         self._repolish(self.scan_button)
+        self._update_action_buttons()
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
@@ -821,6 +842,276 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
 
     # ------------------------------------------------------------------
+    # Dosya işlemleri: taşıma, geri dönüşüm, geri alma (4. aşama)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _collect_marked(groups: list[PhotoGroup]) -> tuple[list[str], int, int]:
+        """İşlenecek yollar, toplam boyut ve atlanan grup sayısı.
+
+        Tüm üyeleri işaretli gruplar atlanır: her gruptan en az bir fotoğraf kalır.
+        Korunan dosyalar hiçbir durumda işleme girmez.
+        """
+        paths: list[str] = []
+        size = 0
+        skipped = 0
+        for g in groups:
+            marked = g.marked - g.protected
+            if not marked:
+                continue
+            if len(marked) >= len(g.members):
+                skipped += 1
+                continue
+            for m in g.members:
+                if m.path in marked:
+                    paths.append(m.path)
+                    size += m.size
+        return paths, size, skipped
+
+    def _ask_scope(self, kind: str) -> list[PhotoGroup] | None:
+        """İşlemin kapsamını sorar: tüm gruplar ya da yalnızca seçili grup."""
+        all_groups = self.groups_by_kind[self.current_kind()]
+        all_paths, all_size, skipped = self._collect_marked(all_groups)
+        here_paths, here_size, _ = self._collect_marked([self.current_group] if self.current_group else [])
+
+        box = QMessageBox(self)
+        box.setWindowTitle("BenzerFoto")
+        box.setIcon(QMessageBox.Icon.Question)
+        if kind == KIND_MOVE:
+            box.setText("İşaretli dosyalar <b>_benzerler</b> klasörüne taşınsın mı?")
+            info = (
+                f"Her dosya, bulunduğu tarama klasörünün içindeki {DUPLICATES_FOLDER_NAME} klasörüne "
+                "alt klasör yapısı korunarak taşınır. Hiçbir dosya silinmez; Geri Al ile geri getirilebilir."
+            )
+        else:
+            box.setText("İşaretli dosyalar <b>Geri Dönüşüm Kutusu</b>'na gönderilsin mi?")
+            info = (
+                "Kutu boşaltılmadığı sürece Geri Al ile geri getirilebilir. "
+                "Kutuya sığmayacak kadar büyük bir dosya olursa Windows ayrıca sorar."
+            )
+        if skipped:
+            info += f"\n\nTüm fotoğrafları işaretli {skipped} grup atlanacak (her gruptan en az biri kalır)."
+        box.setInformativeText(info)
+        all_btn = box.addButton(
+            f"Tüm gruplar ({format_count(len(all_paths))} dosya · {format_size(all_size)})",
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        here_btn = None
+        if here_paths and len(here_paths) != len(all_paths):
+            here_btn = box.addButton(
+                f"Yalnızca bu grup ({len(here_paths)} dosya · {format_size(here_size)})",
+                QMessageBox.ButtonRole.AcceptRole,
+            )
+        box.addButton("Vazgeç", QMessageBox.ButtonRole.RejectRole)
+        all_btn.setEnabled(bool(all_paths))
+        box.setDefaultButton(here_btn or all_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is all_btn:
+            return all_groups
+        if here_btn is not None and clicked is here_btn:
+            return [self.current_group]
+        return None
+
+    def _run_action(self, kind: str) -> None:
+        if self._busy or self.scan_thread is not None:
+            return
+        groups = self._ask_scope(kind)
+        if groups is None:
+            return
+        paths, _size, _skipped = self._collect_marked(groups)
+        if not paths:
+            QMessageBox.information(self, "BenzerFoto", "İşlenecek dosya yok.")
+            return
+        if kind == KIND_TRASH:
+            unsupported = [p for p in paths if not recycle.is_trash_supported(p)]
+            if unsupported:
+                sample = "\n".join(unsupported[:5]) + ("\n…" if len(unsupported) > 5 else "")
+                QMessageBox.warning(
+                    self,
+                    "BenzerFoto",
+                    f"{len(unsupported)} dosya Geri Dönüşüm Kutusu olmayan bir sürücüde (ağ ya da USB). "
+                    "Windows bu dosyaları kalıcı sileceği için işlem yapılmadı.\n\n"
+                    f"Bunun yerine “{DUPLICATES_FOLDER_NAME} klasörüne taşı” seçeneğini kullanın.\n\n{sample}",
+                )
+                return
+            work = lambda progress: actions.send_to_trash(self.db_path, paths, progress)  # noqa: E731
+            title = "Geri Dönüşüm Kutusu'na gönderiliyor…"
+        else:
+            roots = self._folders(FOLDER_SCAN)
+            work = lambda progress: actions.move_to_duplicates(self.db_path, paths, roots, progress)  # noqa: E731
+            title = f"{DUPLICATES_FOLDER_NAME} klasörüne taşınıyor…"
+        self._start_job(title, work, lambda result: self._on_action_done(kind, result))
+
+    def _start_job(self, title: str, work, on_done) -> None:
+        """Dosya işlemini arka planda çalıştırır, ilerleme penceresi gösterir."""
+        self._busy = True
+        self.scan_button.setEnabled(False)
+        self._update_action_buttons()
+        dlg = QProgressDialog(title, "", 0, 0, self)
+        dlg.setWindowTitle("BenzerFoto")
+        dlg.setCancelButton(None)  # yarıda kesilen işlem karışıklık yaratır
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        dlg.setMinimumDuration(0)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        dlg.show()
+        self._progress_dialog = dlg
+        relay = ProgressRelay(self)
+        relay.changed.connect(self._on_job_progress)
+
+        def report(done: int, total: int) -> None:
+            if done == total or done % max(1, total // 100) == 0:
+                relay.changed.emit(done, total)
+
+        def finish(result) -> None:
+            self._end_job()
+            on_done(result)
+
+        def fail(message: str) -> None:
+            self._end_job()
+            QMessageBox.critical(self, "BenzerFoto", f"İşlem tamamlanamadı:\n{message}\n\nGeçmiş penceresinden ayrıntıya bakabilirsiniz.")
+            self._refresh_undo_state()
+
+        run_async(lambda: work(report), finish, fail)
+
+    def _on_job_progress(self, done: int, total: int) -> None:
+        dlg = self._progress_dialog
+        if dlg is not None and total > 0:
+            dlg.setMaximum(total)
+            dlg.setValue(done)
+
+    def _end_job(self) -> None:
+        if self._progress_dialog is not None:
+            self._progress_dialog.close()
+            self._progress_dialog.deleteLater()
+            self._progress_dialog = None
+        self._busy = False
+        self.scan_button.setEnabled(True)
+        self._update_action_buttons()
+
+    def _on_action_done(self, kind: str, result: actions.ActionResult) -> None:
+        self._apply_removal(set(result.done))
+        self._refresh_undo_state()
+        where = f"{DUPLICATES_FOLDER_NAME} klasörüne taşındı" if kind == KIND_MOVE else "Geri Dönüşüm Kutusu'na gönderildi"
+        text = f"{format_count(len(result.done))} dosya ({format_size(result.done_bytes)}) {where}."
+        self.statusBar().showMessage(text + " Geri Al ile geri alabilirsiniz.", 15000)
+        if result.failed:
+            QMessageBox.warning(self, "BenzerFoto", text + "\n\n" + self._failure_text(result.failed))
+        elif result.done:
+            QMessageBox.information(self, "BenzerFoto", text + "\n\nGeri Al düğmesiyle geri alabilirsiniz.")
+
+    @staticmethod
+    def _failure_text(failed: list[tuple[str, str]]) -> str:
+        lines = [f"• {os.path.basename(p)}: {err}" for p, err in failed[:10]]
+        more = f"\n… ve {len(failed) - 10} dosya daha" if len(failed) > 10 else ""
+        return f"{len(failed)} dosya işlenemedi:\n" + "\n".join(lines) + more
+
+    def _apply_removal(self, removed: set[str]) -> None:
+        """Taşınan/kutuya giden dosyaları gruplardan çıkarır; elle yapılan işaretler korunur."""
+        if not removed:
+            return
+        self.features = [f for f in self.features if f.path not in removed]
+        protected = self._folders(FOLDER_PROTECT)
+        for kind, groups in self.groups_by_kind.items():
+            kept = []
+            for g in groups:
+                if any(m.path in removed for m in g.members):
+                    g.members = [m for m in g.members if m.path not in removed]
+                    g.marked -= removed
+                    g.protected -= removed
+                    if len(g.members) < 2:
+                        continue
+                    if g.best_path in removed:
+                        choose_best(g, protected)
+                kept.append(g)
+            self.groups_by_kind[kind] = kept
+        previous = self.current_group
+        self._update_mode_labels()
+        self._apply_filter()
+        if previous is not None and self.current_group is previous:
+            self._show_group(previous)  # kartları yenile
+        self._update_cache_status()
+
+    def _refresh_undo_state(self) -> None:
+        try:
+            with Journal(self.db_path) as journal:
+                self._last_undoable = journal.last_undoable()
+        except Exception:  # günlük okunamazsa geri alma kapalı kalır
+            self._last_undoable = None
+        op = self._last_undoable
+        if op is None:
+            self.undo_button.setToolTip("Geri alınacak işlem yok")
+        else:
+            self.undo_button.setToolTip(
+                f"Son işlemi geri al: {op.created_at} · {op.label} · {format_count(op.done_count)} dosya"
+            )
+        self._update_action_buttons()
+
+    def _undo_last(self) -> None:
+        if self._last_undoable is not None:
+            self._undo_operation(self._last_undoable.id)
+
+    def _undo_operation(self, op_id: int) -> None:
+        if self._busy or self.scan_thread is not None:
+            return
+        with Journal(self.db_path) as journal:
+            op = journal.get(op_id)
+        if op is None or not op.undoable:
+            QMessageBox.information(self, "BenzerFoto", "Bu işlem zaten geri alınmış.")
+            self._refresh_undo_state()
+            return
+        answer = QMessageBox.question(
+            self,
+            "BenzerFoto",
+            f"Bu işlem geri alınsın mı?\n\n{op.created_at} · {op.label}\n"
+            f"{format_count(op.done_count)} dosya · {format_size(op.done_bytes)}\n\n"
+            "Dosyalar özgün klasörlerine geri konur. Özgün yerde aynı adlı bir dosya varsa "
+            "üzerine yazılmaz, o dosya atlanır.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        db_path = self.db_path
+
+        def work(progress):
+            result = actions.undo(db_path, op_id, progress)
+            with FeatureCache(db_path) as cache:
+                feats = cache.get_features(result.done)
+            return result, feats
+
+        self._start_job("Geri alınıyor…", work, self._on_undo_done)
+
+    def _on_undo_done(self, payload) -> None:
+        result, feats = payload
+        self._refresh_undo_state()
+        text = f"{format_count(len(result.done))} dosya ({format_size(result.done_bytes)}) özgün yerine geri kondu."
+        if self.features and result.done:
+            known = {f.path for f in self.features}
+            self.features.extend(f for f in feats if f.path not in known)
+            self._update_cache_status()
+            self._regroup_all()
+            text += "\nGruplar yeniden hesaplandı."
+            if len(feats) < len(result.done):
+                text += f"\n{len(result.done) - len(feats)} dosya önbellekte yok; görmek için yeniden TARA'ya basın."
+        elif result.done:
+            text += "\nGrupları görmek için TARA'ya basın."
+        self.statusBar().showMessage(text.splitlines()[0], 15000)
+        if result.failed:
+            QMessageBox.warning(
+                self, "BenzerFoto", text + "\n\n" + self._failure_text(result.failed) + "\n\nGeri alma daha sonra yeniden denenebilir."
+            )
+        else:
+            QMessageBox.information(self, "BenzerFoto", text)
+
+    def _show_history(self) -> None:
+        dlg = HistoryDialog(self.db_path, self)
+        dlg.exec()
+        if dlg.requested_undo is not None:
+            self._undo_operation(dlg.requested_undo)
+        else:
+            self._refresh_undo_state()
+
+    # ------------------------------------------------------------------
     # Özetler
     # ------------------------------------------------------------------
 
@@ -835,6 +1126,16 @@ class MainWindow(QMainWindow):
             f"Bu grupta işaretli: <b>{here_files} dosya</b> · <b>{format_size(here_size)}</b>"
             f" &nbsp;<span style='color:#666'>(tüm gruplarda: {format_count(all_files)} dosya · {format_size(all_size)})</span>"
         )
+        self._update_action_buttons(all_files)
+
+    def _update_action_buttons(self, marked_count: int | None = None) -> None:
+        if marked_count is None:
+            marked_count = sum(len(g.marked) for g in self.groups_by_kind[self.current_kind()])
+        idle = not self._busy and self.scan_thread is None
+        for b in (self.move_button, self.trash_button):
+            b.setEnabled(idle and marked_count > 0)
+        self.history_button.setEnabled(not self._busy)
+        self.undo_button.setEnabled(idle and self._last_undoable is not None)
 
     def _update_cache_status(self) -> None:
         self.cache_status.setText(f"Önbellek: {self.db_path.name} · {format_count(len(self.features))} fotoğraf")
@@ -864,12 +1165,18 @@ class MainWindow(QMainWindow):
             if kind in FOLDER_ICONS and path:
                 self._append_folder(path, kind)
         self.recursive_box.setChecked(s.value("recursive", True, type=bool))
+        # Ayar sürümü 2: Benzer modunun varsayılanı %80 oldu; eski kayıtlı değer bir kez sıfırlanır
+        if s.value("settings_version", 1, type=int) < 2:
+            s.remove(f"threshold_{GroupKind.SIMILAR.value}")
+            s.setValue("settings_version", 2)
+        # Eşikler moddan önce okunur: mod değişince ayarlar kaydedildiği için
+        # aksi halde kayıtlı eşikler varsayılanlarla ezilirdi
+        for kind in self.thresholds:
+            self.thresholds[kind] = s.value(f"threshold_{kind.value}", self.thresholds[kind], type=float)
         mode = s.value("mode", GroupKind.SCENE.value)
         for kind, btn in self.mode_buttons.items():
             if kind.value == mode:
                 btn.setChecked(True)
-        for kind in self.thresholds:
-            self.thresholds[kind] = s.value(f"threshold_{kind.value}", self.thresholds[kind], type=float)
         window = s.value("window_seconds", 60, type=int)
         if window in WINDOW_CHOICES:
             self.window_combo.setCurrentIndex(WINDOW_CHOICES.index(window))
@@ -897,6 +1204,11 @@ class MainWindow(QMainWindow):
         self._update_rule_status()
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self._busy:
+            # Yarıda kalan dosya işlemi günlükle diskin uyuşmamasına yol açabilir
+            QMessageBox.information(self, "BenzerFoto", "Dosya işlemi sürüyor, bitince kapatabilirsiniz.")
+            event.ignore()
+            return
         if self.scan_thread is not None:
             self.scan_thread.cancel()
             self.scan_thread.wait()

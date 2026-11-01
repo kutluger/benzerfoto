@@ -67,6 +67,12 @@ class ScanThread(QThread):
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
+class ProgressRelay(QObject):
+    """Arka plandaki işin ilerlemesini ana iş parçacığına taşır."""
+
+    changed = Signal(int, int)  # tamamlanan, toplam
+
+
 class _Signals(QObject):
     finished = Signal(object)
     failed = Signal(str)

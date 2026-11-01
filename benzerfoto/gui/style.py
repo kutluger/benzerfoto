@@ -54,6 +54,7 @@ QPushButton#chip:checked {{ background: #1f2328; color: white; border-color: #1f
 QRadioButton {{ padding: 5px 6px; border-radius: 6px; }}
 QRadioButton:checked {{ background: #eef4ff; font-weight: 600; }}
 
+QSlider:horizontal {{ min-height: 30px; }}
 QSlider::groove:horizontal {{ height: 6px; background: #e5e7eb; border-radius: 3px; }}
 QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
 QSlider::handle:horizontal {{

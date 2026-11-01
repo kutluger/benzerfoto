@@ -34,7 +34,27 @@ if not defined PYTHON (
 )
 echo Python: %PYTHON%
 
-rem --- 2) Kodun son halini indir (internet yoksa mevcut kopyayla devam et) ---
+rem --- 2) Kodun son halini al (internet yoksa mevcut kopyayla devam et) ---
+rem Klasör bir git çalışma kopyasıysa ve git kuruluysa git pull kullanılır;
+rem değilse zip indirme yöntemi kullanılır.
+call :find_git
+if exist "%APP_DIR%\.git" if defined GIT goto :update_git
+goto :update_zip
+
+:update_git
+echo Kodun son hali git ile alınıyor...
+set "DIRTY="
+for /f "delims=" %%L in ('call "%GIT%" -C "%APP_DIR%" status --porcelain --untracked-files=no 2^>nul') do set "DIRTY=1"
+if defined DIRTY (
+    echo [UYARI] Klasörde kaydedilmemiş değişiklikler var; üzerine yazmamak için
+    echo         güncelleme atlandı. Mevcut sürüm açılacak.
+    goto :after_update
+)
+"%GIT%" -C "%APP_DIR%" pull --ff-only origin %BRANCH%
+if errorlevel 1 echo [UYARI] Güncelleme alınamadı, bilgisayardaki mevcut sürüm açılacak.
+goto :after_update
+
+:update_zip
 echo Kodun son hali indiriliyor...
 if exist "%WORK%\kod" rmdir /s /q "%WORK%\kod"
 mkdir "%WORK%\kod" 2>nul
@@ -51,6 +71,7 @@ if errorlevel 1 (
     for /d %%D in ("%WORK%\kod\*") do robocopy "%%D" "%APP_DIR%" /E /NFL /NDL /NJH /NJS /NP /XD .venv >nul
 )
 
+:after_update
 pushd "%APP_DIR%" || goto :error
 
 rem --- 3) Sanal ortam ve bağımlılıklar ---
@@ -91,6 +112,16 @@ for /d %%P in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
 )
 if defined PYTHON exit /b 0
 for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON=%%P"
+exit /b 0
+
+:find_git
+rem PATH'teki git, yoksa kullanıcı ya da sistem kurulumundaki git.
+set "GIT="
+for /f "delims=" %%G in ('where git 2^>nul') do if not defined GIT set "GIT=%%G"
+if defined GIT exit /b 0
+if exist "%LOCALAPPDATA%\Programs\Git\cmd\git.exe" set "GIT=%LOCALAPPDATA%\Programs\Git\cmd\git.exe"
+if defined GIT exit /b 0
+if exist "%ProgramFiles%\Git\cmd\git.exe" set "GIT=%ProgramFiles%\Git\cmd\git.exe"
 exit /b 0
 
 :error
