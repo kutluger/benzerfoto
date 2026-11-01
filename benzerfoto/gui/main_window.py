@@ -36,22 +36,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from benzerfoto import __version__, actions, recycle
+from benzerfoto import __version__, actions, recycle, report
 from benzerfoto.cache import FeatureCache
 from benzerfoto.config import DUPLICATES_FOLDER_NAME, default_db_path
 from benzerfoto.features import ImageFeatures
 from benzerfoto.formatting import format_count, format_size
 from benzerfoto.grouping import (
-    DEFAULT_SCENE_DISTANCE,
-    DEFAULT_SIMILAR_DISTANCE,
     GroupKind,
     PhotoGroup,
     build_groups,
     choose_best,
-    distance_to_similarity,
     similarity_to_distance,
 )
 from benzerfoto.gui.history import HistoryDialog
+from benzerfoto.gui.settings_dialog import SettingsDialog, window_text
 from benzerfoto.gui.images import ThumbnailCache, load_qimage
 from benzerfoto.journal import KIND_MOVE, KIND_TRASH, Journal, Operation
 from benzerfoto.gui.style import TAG_COLORS
@@ -64,6 +62,7 @@ from benzerfoto.gui.widgets import (
     ThumbnailGrid,
     scene_time_range,
 )
+from benzerfoto.settings import WINDOW_CHOICES, AppSettings
 
 # Klasör listesindeki satır türleri
 ROLE_KIND = Qt.ItemDataRole.UserRole + 1
@@ -71,7 +70,6 @@ FOLDER_SCAN, FOLDER_EXCLUDE, FOLDER_PROTECT = "scan", "exclude", "protect"
 FOLDER_ICONS = {FOLDER_SCAN: "📁", FOLDER_EXCLUDE: "🚫", FOLDER_PROTECT: "🛡"}
 
 FORMATS = [("JPG", (".jpg", ".jpeg")), ("HEIC", (".heic", ".heif")), ("PNG", (".png",)), ("WEBP", (".webp",))]
-WINDOW_CHOICES = [10, 30, 60, 120, 300]
 SORT_CHOICES = ["En çok yer kazandıran", "En kalabalık", "Tarihe göre (yeni → eski)"]
 
 
@@ -82,14 +80,15 @@ def section_title(text: str) -> QLabel:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, db_path: Path | None = None):
+    def __init__(self, db_path: Path | None = None, settings: QSettings | None = None):
         super().__init__()
         self.setWindowTitle("BenzerFoto — Benzer ve Kopya Fotoğraf Bulucu")
         self.resize(1600, 980)
         self.db_path = Path(db_path) if db_path else default_db_path()
         # Uygulama/kuruluş adı app.py'de "BenzerFoto" olarak verilir; testler
-        # kendi adlarını verip gerçek ayarlara dokunmaz.
-        self.settings = QSettings()
+        # geçici bir INI dosyası verip gerçek ayarlara dokunmaz.
+        self.settings = settings if settings is not None else QSettings()
+        self.app_settings = AppSettings.load(self.settings)
 
         self.features: list[ImageFeatures] = []
         self.groups_by_kind: dict[GroupKind, list[PhotoGroup]] = {k: [] for k in GroupKind}
@@ -99,10 +98,10 @@ class MainWindow(QMainWindow):
         self.scan_thread: ScanThread | None = None
         self._group_request = 0  # eski gruplama sonuçlarını yok saymak için sayaç
         self._preview_request = 0
-        # Her modun kendi eşiği (benzerlik yüzdesi)
+        # Her modun kendi eşiği (benzerlik yüzdesi); açılışta Ayarlar'daki varsayılanlar
         self.thresholds = {
-            GroupKind.SIMILAR: float(round(distance_to_similarity(DEFAULT_SIMILAR_DISTANCE))),
-            GroupKind.SCENE: distance_to_similarity(DEFAULT_SCENE_DISTANCE),
+            GroupKind.SIMILAR: float(self.app_settings.similar_threshold),
+            GroupKind.SCENE: float(self.app_settings.scene_threshold),
         }
         self._busy = False  # dosya işlemi sürüyor mu
         self._last_undoable: Operation | None = None
@@ -211,8 +210,8 @@ class MainWindow(QMainWindow):
         wrow = QHBoxLayout()
         self.window_combo = QComboBox()
         for sec in WINDOW_CHOICES:
-            self.window_combo.addItem(f"{sec} sn" if sec < 120 else f"{sec // 60} dk", sec)
-        self.window_combo.setCurrentIndex(WINDOW_CHOICES.index(60))
+            self.window_combo.addItem(window_text(sec), sec)
+        self.window_combo.setCurrentIndex(WINDOW_CHOICES.index(self.app_settings.scene_window))
         self.window_combo.currentIndexChanged.connect(lambda _: self._regroup_timer.start())
         wrow.addWidget(self.window_combo)
         self.window_hint = QLabel("EXIF çekim zamanına göre")
@@ -411,9 +410,12 @@ class MainWindow(QMainWindow):
         self.history_button.clicked.connect(self._show_history)
         self.undo_button = QPushButton("↶ Geri Al")
         self.undo_button.clicked.connect(self._undo_last)
+        self.settings_button = QPushButton("⚙ Ayarlar")
+        self.settings_button.setToolTip("Varsayılan eşikler, zaman penceresi ve tarama işçi sayısı")
+        self.settings_button.clicked.connect(self._show_settings)
         self.report_button = QPushButton("📄 Rapor")
-        self.report_button.setEnabled(False)
-        self.report_button.setToolTip("Rapor 5. aşamada eklenecek")
+        self.report_button.setToolTip("Seçili moddaki grupları HTML (küçük resimli) ya da CSV (Excel) olarak kaydeder")
+        self.report_button.clicked.connect(self._export_report)
         self.trash_button = QPushButton("🗑 Geri Dönüşüm Kutusu'na gönder")
         self.trash_button.setToolTip("İşaretli dosyaları Geri Dönüşüm Kutusu'na gönderir (geri alınabilir)")
         self.trash_button.clicked.connect(lambda: self._run_action(KIND_TRASH))
@@ -424,7 +426,7 @@ class MainWindow(QMainWindow):
             "alt klasör yapısını koruyarak taşır (geri alınabilir)"
         )
         self.move_button.clicked.connect(lambda: self._run_action(KIND_MOVE))
-        for b in (self.history_button, self.undo_button, self.report_button, self.trash_button, self.move_button):
+        for b in (self.settings_button, self.history_button, self.undo_button, self.report_button, self.trash_button, self.move_button):
             lay.addWidget(b)
         return bar
 
@@ -519,7 +521,13 @@ class MainWindow(QMainWindow):
             return
         self._save_settings()
         self.scan_thread = ScanThread(
-            self.db_path, roots, self._folders(FOLDER_EXCLUDE), self.recursive_box.isChecked(), self._selected_extensions(), self
+            self.db_path,
+            roots,
+            self._folders(FOLDER_EXCLUDE),
+            self.recursive_box.isChecked(),
+            self._selected_extensions(),
+            self.app_settings.effective_workers(),
+            self,
         )
         self.scan_thread.progress.connect(self._on_scan_progress)
         self.scan_thread.succeeded.connect(self._on_scan_finished)
@@ -687,14 +695,7 @@ class MainWindow(QMainWindow):
         elif self.chip_marked.isChecked():
             groups = [g for g in groups if g.marked]
 
-        sort = self.sort_combo.currentIndex()
-        if sort == 0:
-            groups.sort(key=lambda g: -g.marked_size)
-        elif sort == 1:
-            groups.sort(key=lambda g: (-len(g.members), -g.total_size))
-        else:
-            groups.sort(key=lambda g: max((m.taken_at or "") for m in g.members), reverse=True)
-
+        self._sort_groups(groups)
         previous = self.current_group
         self.visible_groups = groups
         self.group_model.set_groups(groups)
@@ -713,6 +714,15 @@ class MainWindow(QMainWindow):
             self.group_view.setCurrentIndex(self.group_model.index(row))
         else:
             self._show_group(None)
+
+    def _sort_groups(self, groups: list[PhotoGroup]) -> None:
+        sort = self.sort_combo.currentIndex()
+        if sort == 0:
+            groups.sort(key=lambda g: -g.marked_size)
+        elif sort == 1:
+            groups.sort(key=lambda g: (-len(g.members), -g.total_size))
+        else:
+            groups.sort(key=lambda g: max((m.taken_at or "") for m in g.members), reverse=True)
 
     def _on_group_selected(self, current, _previous) -> None:
         group = self.group_model.data(current, GroupListModel.GroupRole) if current.isValid() else None
@@ -1112,6 +1122,71 @@ class MainWindow(QMainWindow):
             self._refresh_undo_state()
 
     # ------------------------------------------------------------------
+    # Rapor ve Ayarlar penceresi (5. aşama)
+    # ------------------------------------------------------------------
+
+    def report_groups(self) -> list[PhotoGroup]:
+        """Rapora girecek gruplar: seçili moddaki tümü, ekrandaki sıralamayla."""
+        groups = list(self.groups_by_kind[self.current_kind()])
+        self._sort_groups(groups)
+        return groups
+
+    def _export_report(self) -> None:
+        groups = self.report_groups()
+        if self._busy or not groups:
+            return
+        folder = Path(self.settings.value("report_dir", str(Path.home())))
+        start = str(folder / f"BenzerFoto-rapor-{self.current_kind().value}")
+        path, selected = QFileDialog.getSaveFileName(
+            self, "Raporu kaydet", start, "HTML raporu, küçük resimli (*.html);;CSV tablosu, Excel için (*.csv)"
+        )
+        if not path:
+            return
+        if Path(path).suffix.lower() not in (".html", ".htm", ".csv"):
+            path += ".csv" if "csv" in selected else ".html"
+        self.settings.setValue("report_dir", str(Path(path).parent))
+        self.export_report_to(path, groups)
+
+    def export_report_to(self, path: str, groups: list[PhotoGroup] | None = None) -> None:
+        """Raporu arka planda yazar; bitince haber verir."""
+        groups = self.report_groups() if groups is None else groups
+        self._start_job(
+            "Rapor hazırlanıyor…",
+            lambda progress: report.write_report(groups, path, progress),
+            lambda count: self._on_report_done(path, count),
+        )
+
+    def _on_report_done(self, path: str, count: int) -> None:
+        self.statusBar().showMessage(f"Rapor kaydedildi: {path}", 15000)
+        box = QMessageBox(self)
+        box.setWindowTitle("BenzerFoto")
+        box.setText(f"Rapor kaydedildi ({format_count(count)} dosya).")
+        box.setInformativeText(path)
+        open_btn = box.addButton("Raporu aç", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Kapat", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _show_settings(self) -> None:
+        dlg = SettingsDialog(self.app_settings, self)
+        if dlg.exec():
+            self.apply_app_settings(dlg.values())
+
+    def apply_app_settings(self, new: AppSettings) -> None:
+        """Ayarları kaydeder ve eşikleri/zaman penceresini hemen uygular."""
+        self.app_settings = new
+        new.save(self.settings)
+        self.thresholds[GroupKind.SIMILAR] = float(new.similar_threshold)
+        self.thresholds[GroupKind.SCENE] = float(new.scene_threshold)
+        self.window_combo.blockSignals(True)
+        self.window_combo.setCurrentIndex(WINDOW_CHOICES.index(new.scene_window))
+        self.window_combo.blockSignals(False)
+        self._update_mode_controls()
+        if self.features:
+            self._regroup_all()
+
+    # ------------------------------------------------------------------
     # Özetler
     # ------------------------------------------------------------------
 
@@ -1135,6 +1210,7 @@ class MainWindow(QMainWindow):
         for b in (self.move_button, self.trash_button):
             b.setEnabled(idle and marked_count > 0)
         self.history_button.setEnabled(not self._busy)
+        self.report_button.setEnabled(not self._busy and bool(self.groups_by_kind[self.current_kind()]))
         self.undo_button.setEnabled(idle and self._last_undoable is not None)
 
     def _update_cache_status(self) -> None:
@@ -1165,21 +1241,11 @@ class MainWindow(QMainWindow):
             if kind in FOLDER_ICONS and path:
                 self._append_folder(path, kind)
         self.recursive_box.setChecked(s.value("recursive", True, type=bool))
-        # Ayar sürümü 2: Benzer modunun varsayılanı %80 oldu; eski kayıtlı değer bir kez sıfırlanır
-        if s.value("settings_version", 1, type=int) < 2:
-            s.remove(f"threshold_{GroupKind.SIMILAR.value}")
-            s.setValue("settings_version", 2)
-        # Eşikler moddan önce okunur: mod değişince ayarlar kaydedildiği için
-        # aksi halde kayıtlı eşikler varsayılanlarla ezilirdi
-        for kind in self.thresholds:
-            self.thresholds[kind] = s.value(f"threshold_{kind.value}", self.thresholds[kind], type=float)
+        self._migrate_settings()
         mode = s.value("mode", GroupKind.SCENE.value)
         for kind, btn in self.mode_buttons.items():
             if kind.value == mode:
                 btn.setChecked(True)
-        window = s.value("window_seconds", 60, type=int)
-        if window in WINDOW_CHOICES:
-            self.window_combo.setCurrentIndex(WINDOW_CHOICES.index(window))
         for name, box in self.format_boxes.items():
             box.setChecked(s.value(f"format_{name}", True, type=bool))
         geometry = s.value("geometry")
@@ -1187,6 +1253,23 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geometry)
         self._update_rule_status()
         self._update_cache_status()
+
+    def _migrate_settings(self) -> None:
+        """Ayar sürümü 3: son kullanılan eşik/pencere yerine Ayarlar'daki varsayılanlar.
+
+        0.4'teki son değerler varsayılan olarak bir kez devralınır, eski anahtarlar silinir.
+        """
+        s = self.settings
+        version = s.value("settings_version", 1, type=int)
+        if version >= 3:
+            return
+        if version < 2:
+            # 2. sürüm: Benzer modunun varsayılanı %80 oldu, eski değer devralınmaz
+            s.remove(f"threshold_{GroupKind.SIMILAR.value}")
+        self.apply_app_settings(AppSettings.load(s))
+        for key in ("threshold_similar", "threshold_scene", "window_seconds"):
+            s.remove(key)
+        s.setValue("settings_version", 3)
 
     def _save_settings(self) -> None:
         s = self.settings
@@ -1196,9 +1279,6 @@ class MainWindow(QMainWindow):
         )
         s.setValue("recursive", self.recursive_box.isChecked())
         s.setValue("mode", self.current_kind().value)
-        for kind, value in self.thresholds.items():
-            s.setValue(f"threshold_{kind.value}", value)
-        s.setValue("window_seconds", self.window_combo.currentData())
         for name, box in self.format_boxes.items():
             s.setValue(f"format_{name}", box.isChecked())
         self._update_rule_status()

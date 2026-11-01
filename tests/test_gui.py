@@ -17,6 +17,13 @@ from benzerfoto.scanner import scan  # noqa: E402
 from tests.conftest import make_scene, save_jpeg  # noqa: E402
 
 
+def ini_settings(tmp_path: Path):
+    """Geçici INI dosyası: testler gerçek ayarlara (kayıt defteri) hiç dokunmaz."""
+    from PySide6.QtCore import QSettings
+
+    return QSettings(str(tmp_path / "ayarlar.ini"), QSettings.Format.IniFormat)
+
+
 @pytest.fixture(scope="module")
 def app():
     from PySide6.QtCore import QCoreApplication
@@ -27,18 +34,17 @@ def app():
 
 
 def test_window_shows_groups(app, tmp_path: Path):
-    from PySide6.QtCore import QSettings, QThreadPool
+    from PySide6.QtCore import QThreadPool
 
     from benzerfoto.gui.main_window import FOLDER_PROTECT, MainWindow
 
-    QSettings().clear()  # test kuruluşunun ayarları; uygulamanınkine dokunulmaz
     root = tmp_path / "arsiv"
     for i in range(3):
         save_jpeg(make_scene(1, shift=i * 8, blur=2 if i == 1 else 0), root / f"IMG_{i}.jpg", f"2025:08:14 18:42:{10 + i * 5:02}")
     with FeatureCache(tmp_path / "db.sqlite") as cache:
         features = scan([root], cache, workers=1).features
 
-    w = MainWindow(tmp_path / "db.sqlite")
+    w = MainWindow(tmp_path / "db.sqlite", ini_settings(tmp_path))
     w.features = features
     w._regroup_all()
     QThreadPool.globalInstance().waitForDone(10000)
@@ -65,7 +71,7 @@ def test_window_shows_groups(app, tmp_path: Path):
 
 
 def test_move_and_undo_updates_groups(app, tmp_path: Path, monkeypatch):
-    from PySide6.QtCore import QSettings, QThreadPool
+    from PySide6.QtCore import QThreadPool
 
     from benzerfoto import actions
     from benzerfoto.cache import FeatureCache as Cache
@@ -76,7 +82,6 @@ def test_move_and_undo_updates_groups(app, tmp_path: Path, monkeypatch):
     for name in ("information", "warning"):
         monkeypatch.setattr(QtWidgets.QMessageBox, name, staticmethod(lambda *a, **k: None))
 
-    QSettings().clear()
     root = tmp_path / "arsiv"
     for i in range(3):
         save_jpeg(make_scene(1, shift=i * 8, blur=2 if i == 1 else 0), root / f"IMG_{i}.jpg", f"2025:08:14 18:42:{10 + i * 5:02}")
@@ -84,7 +89,7 @@ def test_move_and_undo_updates_groups(app, tmp_path: Path, monkeypatch):
     with Cache(db) as cache:
         features = scan([root], cache, workers=1).features
 
-    w = MainWindow(db)
+    w = MainWindow(db, ini_settings(tmp_path))
     w._append_folder(str(root), FOLDER_SCAN)
     w.features = features
     w._regroup_all()
@@ -112,3 +117,75 @@ def test_move_and_undo_updates_groups(app, tmp_path: Path, monkeypatch):
     assert len(w.groups_by_kind[GroupKind.SCENE]) == 1
     assert not w.undo_button.isEnabled()
     w.close()
+
+
+def _window_with_group(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import QThreadPool
+
+    from benzerfoto.gui.main_window import MainWindow
+
+    for name in ("information", "warning"):
+        monkeypatch.setattr(QtWidgets.QMessageBox, name, staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "exec", lambda self: 0)
+    root = tmp_path / "arsiv"
+    for i in range(3):
+        save_jpeg(make_scene(1, shift=i * 8), root / f"IMG_{i}.jpg", f"2025:08:14 18:42:{10 + i * 5:02}")
+    db = tmp_path / "db.sqlite"
+    with FeatureCache(db) as cache:
+        features = scan([root], cache, workers=1).features
+    w = MainWindow(db, ini_settings(tmp_path))
+    assert not w.report_button.isEnabled()  # grup yokken rapor alınmaz
+    w.features = features
+    w._regroup_all()
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    return w
+
+
+def test_report_button_writes_files(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import QThreadPool
+
+    w = _window_with_group(app, tmp_path, monkeypatch)
+    assert w.report_button.isEnabled()
+    for name in ("rapor.html", "rapor.csv"):
+        out = tmp_path / name
+        w.export_report_to(str(out))
+        QThreadPool.globalInstance().waitForDone(10000)
+        app.processEvents()
+        assert out.exists() and out.stat().st_size > 0
+    assert (tmp_path / "rapor.csv").read_bytes().startswith(b"\xef\xbb\xbf")
+    assert (tmp_path / "rapor.html").read_text(encoding="utf-8").count("base64,") == 3
+    assert not w._busy and w.report_button.isEnabled()
+    w.close()
+
+
+def test_settings_apply_and_persist(app, tmp_path: Path, monkeypatch):
+    from benzerfoto.gui.main_window import MainWindow
+    from benzerfoto.settings import AppSettings
+
+    w = _window_with_group(app, tmp_path, monkeypatch)
+    w.apply_app_settings(AppSettings(similar_threshold=90, scene_threshold=95, scene_window=10, workers=2))
+    assert w.thresholds[GroupKind.SCENE] == 95.0
+    assert w.window_combo.currentData() == 10
+    assert w.app_settings.effective_workers() == 2
+    w.close()
+
+    # Yeniden açılışta varsayılanlar okunur; oturumdaki kaydırıcı değeri değil
+    w2 = MainWindow(tmp_path / "db.sqlite", ini_settings(tmp_path))
+    assert w2.thresholds[GroupKind.SIMILAR] == 90.0
+    assert w2.window_combo.currentData() == 10
+    w2.threshold_slider.setValue(60)
+    w2.close()
+    w3 = MainWindow(tmp_path / "db.sqlite", ini_settings(tmp_path))
+    assert w3.thresholds[GroupKind.SIMILAR] == 90.0
+    w3.close()
+
+
+def test_settings_dialog_values(app):
+    from benzerfoto.gui.settings_dialog import SettingsDialog
+    from benzerfoto.settings import AppSettings
+
+    dlg = SettingsDialog(AppSettings(similar_threshold=85, scene_window=300, workers=4))
+    assert dlg.values() == AppSettings(similar_threshold=85, scene_window=300, workers=4)
+    dlg.set_values(AppSettings())
+    assert dlg.values() == AppSettings()

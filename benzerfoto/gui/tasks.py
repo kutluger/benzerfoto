@@ -28,6 +28,7 @@ class ScanThread(QThread):
         excludes: list[str],
         recursive: bool,
         extensions: Iterable[str],
+        workers: int | None = None,
         parent: QObject | None = None,
     ):
         super().__init__(parent)
@@ -35,6 +36,7 @@ class ScanThread(QThread):
         self.roots, self.excludes = roots, excludes
         self.recursive = recursive
         self.extensions = list(extensions)
+        self.workers = workers
         self.cancel_event = threading.Event()
         self._last_emit = 0.0
 
@@ -58,6 +60,7 @@ class ScanThread(QThread):
                     cache,
                     excludes=self.excludes,
                     recursive=self.recursive,
+                    workers=self.workers,
                     progress=self._on_progress,
                     cancel_event=self.cancel_event,
                     extensions=self.extensions,
