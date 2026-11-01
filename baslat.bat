@@ -64,7 +64,7 @@ fc /b requirements.txt ".venv\.requirements-installed" >nul 2>nul
 if errorlevel 1 (
     echo Bağımlılıklar kuruluyor, ilk seferde birkaç dakika sürebilir...
     ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
-    ".venv\Scripts\python.exe" -m pip install --upgrade -r requirements-dev.txt || goto :error
+    ".venv\Scripts\python.exe" -m pip install --only-binary=:all: --upgrade -r requirements-dev.txt || goto :error
     copy /y requirements.txt ".venv\.requirements-installed" >nul
 )
 
