@@ -119,7 +119,13 @@ def cmd_gui(args: argparse.Namespace) -> int:
     # PySide6 yalnızca arayüz açılırken yüklenir; komut satırı onsuz da çalışır
     from benzerfoto.gui.app import run
 
-    return run(args.db)
+    return run(args.db, args.settings_file)
+
+
+def cmd_doctor(_args: argparse.Namespace) -> int:
+    from benzerfoto.doctor import main as doctor_main
+
+    return doctor_main()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -129,6 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--db", type=Path, default=default_db_path(), help="önbellek veritabanı yolu"
+    )
+    parser.add_argument(
+        "--settings-file",
+        type=Path,
+        default=None,
+        help="ayarları kayıt defteri yerine bu INI dosyasında tut (taşınabilir kullanım)",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -145,6 +157,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gui = sub.add_parser("gui", help="görsel arayüzü aç (varsayılan)")
     p_gui.set_defaults(func=cmd_gui)
+
+    p_doctor = sub.add_parser("doctor", help="gerekli paketlerin yüklenebildiğini kontrol et")
+    p_doctor.set_defaults(func=cmd_doctor)
     return parser
 
 
