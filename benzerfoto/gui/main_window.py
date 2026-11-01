@@ -953,7 +953,7 @@ class MainWindow(QMainWindow):
             title = f"{DUPLICATES_FOLDER_NAME} klasörüne taşınıyor…"
         self._start_job(title, work, lambda result: self._on_action_done(kind, result))
 
-    def _start_job(self, title: str, work, on_done) -> None:
+    def _start_job(self, title: str, work, on_done, fail_hint: str = "Geçmiş penceresinden ayrıntıya bakabilirsiniz.") -> None:
         """Dosya işlemini arka planda çalıştırır, ilerleme penceresi gösterir."""
         self._busy = True
         self.scan_button.setEnabled(False)
@@ -980,7 +980,7 @@ class MainWindow(QMainWindow):
 
         def fail(message: str) -> None:
             self._end_job()
-            QMessageBox.critical(self, "BenzerFoto", f"İşlem tamamlanamadı:\n{message}\n\nGeçmiş penceresinden ayrıntıya bakabilirsiniz.")
+            QMessageBox.critical(self, "BenzerFoto", f"İşlem tamamlanamadı:\n{message}\n\n{fail_hint}")
             self._refresh_undo_state()
 
         run_async(lambda: work(report), finish, fail)
@@ -1154,6 +1154,7 @@ class MainWindow(QMainWindow):
             "Rapor hazırlanıyor…",
             lambda progress: report.write_report(groups, path, progress),
             lambda count: self._on_report_done(path, count),
+            fail_hint="Rapor kaydedilemedi. Başka bir klasör seçip yeniden deneyin.",
         )
 
     def _on_report_done(self, path: str, count: int) -> None:

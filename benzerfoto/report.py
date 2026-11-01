@@ -19,8 +19,8 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-import benzerfoto.features  # noqa: F401  (HEIC açıcısını kaydeder)
 from benzerfoto import __version__
+from benzerfoto.features import ImageFeatures  # içe aktarılınca HEIC açıcısı da kaydolur
 from benzerfoto.formatting import format_count, format_date, format_size
 from benzerfoto.grouping import PhotoGroup
 
@@ -59,12 +59,20 @@ def member_status(group: PhotoGroup, path: str) -> str:
     return STATUS_KEEP
 
 
+def ordered_members(group: PhotoGroup) -> list[ImageFeatures]:
+    """Önerilen kare başta, diğerleri gruptaki sırasıyla."""
+    return sorted(group.members, key=lambda m: m.path != group.best_path)
+
+
+def resolution_text(m: ImageFeatures) -> str:
+    return f"{m.width} × {m.height}" if m.width and m.height else "—"
+
+
 def build_rows(groups: Sequence[PhotoGroup]) -> list[ReportRow]:
     """Her grubun üyelerini, önerilen kare başta olacak şekilde satırlara çevirir."""
     rows: list[ReportRow] = []
     for no, group in enumerate(groups, start=1):
-        members = sorted(group.members, key=lambda m: m.path != group.best_path)
-        for m in members:
+        for m in ordered_members(group):
             rows.append(
                 ReportRow(
                     kind=group.kind.label,
@@ -72,7 +80,7 @@ def build_rows(groups: Sequence[PhotoGroup]) -> list[ReportRow]:
                     status=member_status(group, m.path),
                     path=m.path,
                     size=m.size,
-                    resolution=f"{m.width} × {m.height}" if m.width and m.height else "—",
+                    resolution=resolution_text(m),
                     taken_at=format_date(m.taken_at) if m.taken_at else "—",
                     # Türkçe Excel ondalık ayırıcı olarak virgül bekler
                     sharpness=f"{m.sharpness:.1f}".replace(".", ",") if m.sharpness is not None else "—",
@@ -135,11 +143,11 @@ h2 small{color:#777;font-weight:normal}
 """
 
 
-def _card(m, group: PhotoGroup, thumb: str | None) -> str:
+def _card(m: ImageFeatures, group: PhotoGroup, thumb: str | None) -> str:
     status = member_status(group, m.path)
     esc = html.escape
     image = f'<img src="{thumb}" alt="">' if thumb else "<span>önizleme yok</span>"
-    res = f"{m.width} × {m.height}" if m.width and m.height else "—"
+    res = resolution_text(m)
     sharp = f"{m.sharpness:.0f}" if m.sharpness is not None else "—"
     return (
         f'<div class="card {_STATUS_CLASS[status]}"><div class="thumb">{image}</div>'
@@ -177,7 +185,7 @@ def write_html(
             f"<section><h2>Grup #{no} · {html.escape(group.kind.label)} "
             f"<small>{len(group.members)} fotoğraf · {format_size(group.total_size)}</small></h2><div class=\"cards\">"
         )
-        for m in sorted(group.members, key=lambda m: m.path != group.best_path):
+        for m in ordered_members(group):
             parts.append(_card(m, group, thumbnail(m.path)))
             done += 1
             notify(done, total)
