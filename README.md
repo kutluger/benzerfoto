@@ -13,7 +13,16 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 | 2 | Gruplama: kopya / benzer / aynı sahne, en iyiyi önerme | ✅ |
 | 3 | PySide6 arayüzü | ✅ |
 | 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ✅ |
-| 5 | Rapor, ayarlar, EXE paketleme | ⏳ |
+| 5 | Rapor, ayarlar, EXE paketleme (beta 0.5.0) | ✅ |
+
+## Hazır paket (EXE, Python gerekmez)
+
+`BenzerFoto-0.5.0-win64.zip` dosyasını bir klasöre açın, **BenzerFoto.exe**'ye çift tıklayın.
+
+Windows 11'in **Akıllı Uygulama Denetimi** imzasız programları engelleyebilir
+(“Uygulama Denetimi ilkesi bu dosyayı engelledi”). Bu durumda güvenlik ayarını
+değiştirmeyin; aynı klasördeki **BenzerFoto-ac.bat** dosyasını çalıştırın (aynı program,
+konsol penceresiyle açılır) ya da aşağıdaki `baslat.bat` yolunu kullanın.
 
 ## Kolay kurulum (Windows)
 
@@ -61,7 +70,15 @@ python -m benzerfoto
      Windows dosyayı kalıcı sileceği için işlem yapılmaz. Kutuya sığmayan bir dosya olursa
      Windows ayrıca sorar.
    - Tüm fotoğrafları işaretli gruplar atlanır, korunan klasördeki dosyalar hiçbir zaman işlenmez.
-7. **↶ Geri Al** son işlemi geri alır: dosyalar özgün yerlerine döner (kutuya gönderilenler de,
+7. **📄 Rapor** seçili moddaki tüm grupları kaydeder (sıralama ekrandakiyle aynı):
+   - **HTML**: küçük resimler dosyanın içine gömülüdür; tek dosyadır, internetsiz açılır.
+   - **CSV**: Excel'de Türkçe karakterler ve sütunlar doğru açılır (UTF-8 BOM, `;` ayırıcı).
+   Sütunlar: tür, grup no, durum (★ Önerilen / İşaretli / Korunan / Tutulacak), yol, boyut,
+   çözünürlük, çekim zamanı, netlik.
+8. **⚙ Ayarlar**: benzer ve aynı sahne eşikleri, aynı sahne zaman penceresi ve tarama işçi
+   sayısı (0 = otomatik). Eşikler ve zaman penceresi her açılışta buradaki değerlerle başlar;
+   kaydırıcı yalnızca o oturumu etkiler. **Fabrika değerleri** düğmesi varsayılanlara döndürür.
+9. **↶ Geri Al** son işlemi geri alır: dosyalar özgün yerlerine döner (kutuya gönderilenler de,
    kutu boşaltılmadıysa). Özgün yerde aynı adlı dosya varsa o dosya atlanır, geri alma daha
    sonra tekrar denenebilir. **🕘 Geçmiş** penceresi tüm işlemleri dosya dosya listeler ve
    istenen işlemi geri almayı sağlar. Günlük, önbellekle aynı veritabanında tutulur.
@@ -100,6 +117,9 @@ python -m benzerfoto info
   Farklı bir konum için `--db yol\dosya.db` kullanılabilir (komuttan önce yazılır).
 - `_benzerler` adlı klasörler her zaman atlanır.
 
+- `--settings-file ayarlar.ini` ayarları kayıt defteri yerine bir dosyada tutar (taşınabilir kullanım).
+- `python -m benzerfoto doctor` gerekli paketlerin yüklenip yüklenemediğini gösterir.
+
 Desteklenen formatlar: JPG, PNG, WEBP, HEIC/HEIF.
 
 ## Testler
@@ -107,6 +127,19 @@ Desteklenen formatlar: JPG, PNG, WEBP, HEIC/HEIF.
 ```powershell
 python -m pytest
 ```
+
+Testler yalnızca geçici klasörlerde üretilen görsellerle ve geçici ayar dosyasıyla çalışır.
+
+## EXE paketleme
+
+```powershell
+pip install -r requirements-build.txt
+python packaging\paketle.py
+```
+
+`benzerfoto.spec` (PyInstaller, `--onedir`) iki program üretir: `BenzerFoto.exe` (arayüz) ve
+`benzerfoto-cli.exe` (komut satırı). HEIC kütüphanesi (libheif) ve Qt eklentileri pakete dahildir.
+Çıktı: `dist\BenzerFoto\` ve `dist\BenzerFoto-<sürüm>-win64.zip`.
 
 ## Proje yapısı
 
@@ -122,7 +155,10 @@ benzerfoto/
   journal.py    işlem günlüğü (SQLite)
   recycle.py    Windows Geri Dönüşüm Kutusu'na gönderme ve geri yükleme
   formatting.py Türkçe boyut ve tarih biçimleri
+  report.py     CSV ve tek dosyalı HTML rapor
+  settings.py   kalıcı ayarlar (varsayılan eşikler, zaman penceresi, işçi sayısı)
   cli.py        komut satırı aracı
   gui/          PySide6 arayüzü (ana pencere, bileşenler, stil, arka plan işleri)
 tests/          pytest testleri
+packaging/      EXE paketi ve zip hazırlama
 ```

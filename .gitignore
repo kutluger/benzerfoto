@@ -6,6 +6,7 @@ venv/
 build/
 dist/
 *.spec
+!benzerfoto.spec
 *.db
 *.db-wal
 *.db-shm

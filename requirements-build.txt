@@ -1,0 +1,5 @@
+# EXE paketleme için (yalnızca geliştirici bilgisayarında gerekir)
+# Sürümler sabit: Akıllı Uygulama Denetimi yeni çıkmış ikili dosyaları engelleyebiliyor.
+-r requirements.txt
+pyinstaller==6.21.0
+pyinstaller-hooks-contrib==2026.7
