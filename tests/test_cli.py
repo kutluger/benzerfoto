@@ -13,8 +13,8 @@ from benzerfoto.cli import build_parser, main
 def test_version_is_beta(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
-    assert "0.5.0" in capsys.readouterr().out
-    assert __version__ == "0.5.0"
+    assert "0.9.0" in capsys.readouterr().out
+    assert __version__ == "0.9.0"
 
 
 def test_settings_file_option(tmp_path: Path):
