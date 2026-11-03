@@ -8,7 +8,6 @@
   </defs>
   <!-- arkadaki kart: benzer fotoğraf -->
   <rect x="34" y="8" width="214" height="214" rx="44" fill="#bfdbfe"/>
-  <circle cx="220" cy="23" r="10" fill="#f59e0b"/>
   <!-- öndeki kart -->
   <rect x="8" y="34" width="214" height="214" rx="44" fill="url(#front)"/>
   <!-- B -->
