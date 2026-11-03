@@ -243,3 +243,20 @@ def test_card_context_menu_is_readable(app):
     menu.ensurePolished()
     menu.adjustSize()
     assert _mean_lightness(menu) > 200
+
+
+def test_app_icon_and_ico_sizes(app):
+    """BF logosu: pencere simgesi tüm boyutlarda yüklü, ICO 16-256 px içerir."""
+    import sys
+
+    from PIL import Image
+
+    from benzerfoto.gui.icon import ASSETS_DIR, ICON_SIZES, app_icon, set_windows_app_id
+
+    icon = app_icon()
+    assert not icon.isNull()
+    assert {s.width() for s in icon.availableSizes()} >= set(ICON_SIZES)
+    with Image.open(ASSETS_DIR / "bf.ico") as ico:
+        sizes = {w for w, _h in ico.info["sizes"]}
+    assert {16, 32, 48, 256} <= sizes
+    assert set_windows_app_id() == (sys.platform == "win32")

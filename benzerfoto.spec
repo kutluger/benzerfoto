@@ -36,7 +36,8 @@ a = Analysis(
     ["benzerfoto/__main__.py"],
     pathex=["."],
     binaries=heif_binaries,
-    datas=[],
+    # BF logosu: pencere simgesi için PNG'ler
+    datas=[("benzerfoto/assets", "benzerfoto/assets")],
     hiddenimports=collect_submodules("benzerfoto") + ["pillow_heif", "_pillow_heif"],
     excludes=qt_excludes + ["tkinter", "matplotlib", "pytest", "IPython"],
     noarchive=False,
@@ -49,6 +50,7 @@ gui_exe = EXE(
     [],
     exclude_binaries=True,
     name="BenzerFoto",
+    icon="benzerfoto/assets/bf.ico",
     console=False,
     upx=False,
 )
@@ -58,6 +60,7 @@ cli_exe = EXE(
     [],
     exclude_binaries=True,
     name="benzerfoto-cli",
+    icon="benzerfoto/assets/bf.ico",
     console=True,
     upx=False,
 )

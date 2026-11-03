@@ -49,6 +49,7 @@ from benzerfoto.grouping import (
     similarity_to_distance,
 )
 from benzerfoto.gui.history import HistoryDialog
+from benzerfoto.gui.icon import app_icon
 from benzerfoto.gui.settings_dialog import SettingsDialog, window_text
 from benzerfoto.gui.images import ThumbnailCache, load_qimage
 from benzerfoto.journal import KIND_MOVE, KIND_TRASH, Journal, Operation
@@ -85,6 +86,7 @@ class MainWindow(QMainWindow):
     def __init__(self, db_path: Path | None = None, settings: QSettings | None = None):
         super().__init__()
         self.setWindowTitle("BenzerFoto — Benzer ve Kopya Fotoğraf Bulucu")
+        self.setWindowIcon(app_icon())
         self.resize(1600, 980)
         self.db_path = Path(db_path) if db_path else default_db_path()
         # Uygulama/kuruluş adı app.py'de "BenzerFoto" olarak verilir; testler
