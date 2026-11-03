@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QSplitter,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -52,6 +54,7 @@ from benzerfoto.grouping import (
     choose_best,
     similarity_to_distance,
 )
+from benzerfoto.gui.confirm import DiscardGroupDialog
 from benzerfoto.gui.history import HistoryDialog
 from benzerfoto.gui.icon import app_icon
 from benzerfoto.gui.settings_dialog import SettingsDialog, window_text
@@ -325,6 +328,8 @@ class MainWindow(QMainWindow):
         self.group_view.setUniformItemSizes(True)
         self.group_view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.group_view.selectionModel().currentChanged.connect(self._on_group_selected)
+        self.group_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.group_view.customContextMenuRequested.connect(self._group_menu)
         self.thumbs.loaded.connect(lambda _p: self.group_view.viewport().update())
         lay.addWidget(self.group_view, 1)
 
@@ -382,7 +387,16 @@ class MainWindow(QMainWindow):
             "Seçimi değiştirince ya da Sonraki/Page Down ile geçince kendiliğinden işaretlenir."
         )
         self.reviewed_button.toggled.connect(self._on_reviewed_toggled)
-        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button, self.reviewed_button):
+        self.more_button = QToolButton()
+        self.more_button.setText("⋯")
+        self.more_button.setToolTip("Diğer grup işlemleri")
+        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more_menu = QMenu(self.more_button)
+        self.discard_group_action = more_menu.addAction(
+            "🗑 Grubun tamamını Geri Dönüşüm Kutusu'na gönder…", self._discard_current_group
+        )
+        self.more_button.setMenu(more_menu)
+        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button, self.reviewed_button, self.more_button):
             hl.addWidget(b)
         lay.addWidget(header)
 
@@ -392,6 +406,7 @@ class MainWindow(QMainWindow):
         self.grid.mark_toggled.connect(self._on_mark_toggled)
         self.grid.keep_requested.connect(self._keep_only)
         self.grid.open_folder_requested.connect(self._open_in_explorer)
+        self.grid.discard_group_requested.connect(self._discard_current_group)
         splitter.addWidget(self.grid)
 
         preview_wrap = QWidget()
@@ -836,7 +851,7 @@ class MainWindow(QMainWindow):
     def _show_group(self, group: PhotoGroup | None) -> None:
         self.current_group = group
         has = group is not None
-        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button, self.reviewed_button):
+        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button, self.reviewed_button, self.more_button):
             b.setEnabled(has)
         self._sync_reviewed_button()
         if not has:
@@ -1065,6 +1080,66 @@ class MainWindow(QMainWindow):
         done = sum(1 for g in groups if g.reviewed)
         self.chip_open.setText(f"İncelenmemiş ({format_count(len(groups) - done)})" if groups else "İncelenmemiş")
         self.chip_reviewed.setText(f"İncelendi ({format_count(done)})" if groups else "İncelendi")
+
+    def _group_menu(self, pos) -> None:
+        index = self.group_view.indexAt(pos)
+        if not index.isValid():
+            return
+        self.group_view.setCurrentIndex(index)
+        menu = QMenu(self)
+        reviewed = bool(self.current_group and self.current_group.reviewed)
+        menu.addAction("İncelendi işaretini kaldır" if reviewed else "✓ İncelendi olarak işaretle", self.reviewed_button.toggle)
+        menu.addSeparator()
+        menu.addAction("🗑 Grubun tamamını Geri Dönüşüm Kutusu'na gönder…", self._discard_current_group)
+        menu.exec(self.group_view.viewport().mapToGlobal(pos))
+
+    def _confirm_discard(self, group: PhotoGroup, paths: list[str], size: int) -> bool:
+        """Grubun tamamını göndermek için iki aşamalı onay."""
+        first = QMessageBox.warning(
+            self,
+            "Grubun tamamı",
+            f"Bu gruptaki {len(paths)} fotoğrafın HİÇBİRİ tutulmayacak; hepsi Geri Dönüşüm "
+            f"Kutusu'na gönderilecek ({format_size(size)}).\n\n"
+            "Normalde her gruptan en az bir fotoğraf kalır. Bu işlem bu kuralı yalnızca bu grup "
+            "için kaldırır. Devam edilsin mi?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if first != QMessageBox.StandardButton.Yes:
+            return False
+        dialog = DiscardGroupDialog(len(paths), format_size(size), self)
+        return dialog.exec() == DiscardGroupDialog.DialogCode.Accepted
+
+    def _discard_current_group(self) -> None:
+        """Grubun korunmayan tüm fotoğraflarını Geri Dönüşüm Kutusu'na gönderir (geri alınabilir)."""
+        group = self.current_group
+        if group is None or not self._is_idle():
+            return
+        members = [m for m in group.members if m.path not in group.protected]
+        if not members:
+            QMessageBox.information(self, "BenzerFoto", "Bu gruptaki tüm fotoğraflar korunan klasörde; gönderilecek dosya yok.")
+            return
+        paths = [m.path for m in members]
+        size = sum(m.size for m in members)
+        unsupported = [p for p in paths if not recycle.is_trash_supported(p)]
+        if unsupported:
+            QMessageBox.warning(
+                self,
+                "BenzerFoto",
+                f"{len(unsupported)} dosya Geri Dönüşüm Kutusu olmayan bir sürücüde (ağ ya da USB). "
+                "Windows bu dosyaları kalıcı sileceği için işlem yapılmadı.",
+            )
+            return
+        if not self._confirm_discard(group, paths, size):
+            return
+        if len(members) < len(group.members):
+            self.statusBar().showMessage(f"{len(group.members) - len(members)} korunan fotoğraf gruba bırakıldı.", 15000)
+        db_path = self.db_path
+        self._start_job(
+            "Grubun tamamı Geri Dönüşüm Kutusu'na gönderiliyor…",
+            lambda progress: actions.send_to_trash(db_path, paths, progress),
+            lambda result: self._on_action_done(KIND_TRASH, result),
+        )
 
     def _open_in_explorer(self, path: str) -> None:
         if sys.platform == "win32":

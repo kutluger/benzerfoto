@@ -65,6 +65,9 @@ QPushButton#scanButton:hover {{ background: #1d4ed8; }}
 QPushButton#scanButton[running="true"] {{ background: {DANGER}; }}
 QPushButton#primary {{ background: {ACCENT}; color: white; border-color: {ACCENT}; }}
 QPushButton#primary:disabled {{ background: #93b4f5; color: #eef4ff; border-color: #93b4f5; }}
+QToolButton {{ background: #f6f8fa; border: 1px solid #c8ced5; border-radius: 5px; padding: 4px 10px; font-weight: 700; }}
+QToolButton:hover {{ background: #eef1f4; }}
+QToolButton::menu-indicator {{ image: none; width: 0; }}
 QPushButton#chip {{ border-radius: 11px; padding: 3px 10px; background: #ffffff; border: 1px solid #d0d7de; }}
 QPushButton#chip:checked {{ background: #1f2328; color: white; border-color: #1f2328; }}
 QPushButton#reviewedToggle:checked {{ background: #dcfce7; color: #166534; border-color: {OK}; font-weight: 600; }}

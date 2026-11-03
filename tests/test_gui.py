@@ -453,3 +453,54 @@ def test_scope_dialog_offers_reviewed_groups(app, tmp_path: Path, monkeypatch):
     assert w._ask_scope(KIND_TRASH) == [first]
     assert any(t.startswith("İncelenen gruplara uygula (1 grup") for t in seen["buttons"])
     w.close()
+
+
+def test_discard_dialog_needs_explicit_confirmation(app):
+    from benzerfoto.gui.confirm import DiscardGroupDialog
+
+    dlg = DiscardGroupDialog(3, "2,1 MB")
+    assert not dlg.send_button.isEnabled()
+    dlg.confirm_box.setChecked(True)
+    assert dlg.send_button.isEnabled()
+    dlg.confirm_box.setChecked(False)
+    assert not dlg.send_button.isEnabled()
+
+
+def test_discard_whole_group_double_confirmation(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import QThreadPool
+
+    from benzerfoto import actions, recycle
+    from benzerfoto.gui import confirm
+
+    w = _window_with_two_groups(app, tmp_path, monkeypatch)
+    group = next(g for g in w.visible_groups if len(g.members) == 3)
+    w.group_view.setCurrentIndex(w.group_model.index(w.visible_groups.index(group)))
+    assert w.current_group is group
+    paths = [m.path for m in group.members]
+    group.protected.add(paths[0])  # korunan fotoğraf gönderilmez
+    group.marked.discard(paths[0])
+
+    sent = []
+    monkeypatch.setattr(recycle, "is_trash_supported", lambda p: True)
+    monkeypatch.setattr(
+        actions, "send_to_trash", lambda db, ps, progress=None: sent.append(list(ps)) or actions.ActionResult(op_id=1, done=list(ps))
+    )
+    answers = {"first": QtWidgets.QMessageBox.StandardButton.No, "second": 0}
+    monkeypatch.setattr(QtWidgets.QMessageBox, "warning", staticmethod(lambda *a, **k: answers["first"]))
+    monkeypatch.setattr(confirm.DiscardGroupDialog, "exec", lambda self: answers["second"])
+
+    def run():
+        w._discard_current_group()
+        QThreadPool.globalInstance().waitForDone(10000)
+        app.processEvents()
+
+    run()  # ilk soruda vazgeçti
+    answers["first"] = QtWidgets.QMessageBox.StandardButton.Yes
+    run()  # ikinci pencerede vazgeçti
+    assert sent == []
+
+    answers["second"] = confirm.DiscardGroupDialog.DialogCode.Accepted
+    run()
+    assert sent == [paths[1:]]
+    assert all(g is not group for g in w.groups_by_kind[GroupKind.SCENE])  # tek fotoğraf kaldı, grup düştü
+    w.close()

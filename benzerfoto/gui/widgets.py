@@ -196,6 +196,7 @@ class ThumbCard(QFrame):
     mark_toggled = Signal(str, bool)
     keep_requested = Signal(str)  # "bunu tut" (öneri yap)
     open_folder_requested = Signal(str)
+    discard_group_requested = Signal()  # grubun tamamını gönder
 
     def __init__(self, item: ImageFeatures, group: PhotoGroup, max_sharpness: float, parent=None):
         super().__init__(parent)
@@ -322,11 +323,15 @@ class ThumbCard(QFrame):
         menu = QMenu(self)
         keep = menu.addAction("★ Bunu tut, diğerlerini işaretle")
         folder = menu.addAction("📂 Dosya konumunu aç")
+        menu.addSeparator()
+        discard = menu.addAction("🗑 Grubun tamamını Geri Dönüşüm Kutusu'na gönder…")
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen == keep:
             self.keep_requested.emit(self.item.path)
         elif chosen == folder:
             self.open_folder_requested.emit(self.item.path)
+        elif chosen == discard:
+            self.discard_group_requested.emit()
 
 
 class ThumbnailGrid(QScrollArea):
@@ -336,6 +341,7 @@ class ThumbnailGrid(QScrollArea):
     mark_toggled = Signal(str, bool)
     keep_requested = Signal(str)
     open_folder_requested = Signal(str)
+    discard_group_requested = Signal()
 
     SPACING = 12
 
@@ -377,6 +383,7 @@ class ThumbnailGrid(QScrollArea):
             card.mark_toggled.connect(self.mark_toggled)
             card.keep_requested.connect(self.keep_requested)
             card.open_folder_requested.connect(self.open_folder_requested)
+            card.discard_group_requested.connect(self.discard_group_requested)
             self.cards[item.path] = card
         self._columns = 0
         self._relayout()
