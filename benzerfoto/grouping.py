@@ -48,6 +48,7 @@ class PhotoGroup:
     best_path: str | None = None
     marked: set[str] = field(default_factory=set)  # ayrılmak üzere işaretli yollar
     protected: set[str] = field(default_factory=set)  # koruma kuralına giren yollar
+    reviewed: bool = False  # kullanıcı bu grubu inceledi mi (review.py'de saklanır)
 
     @property
     def total_size(self) -> int:

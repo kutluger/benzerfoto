@@ -38,7 +38,7 @@ from benzerfoto.features import ImageFeatures
 from benzerfoto.formatting import format_date, format_size, format_time
 from benzerfoto.grouping import GroupKind, PhotoGroup
 from benzerfoto.gui.images import ThumbnailCache
-from benzerfoto.gui.style import ACCENT, TAG_COLORS
+from benzerfoto.gui.style import ACCENT, OK, TAG_COLORS
 
 
 def group_title(group: PhotoGroup) -> str:
@@ -104,7 +104,6 @@ class GroupDelegate(QStyledItemDelegate):
     def __init__(self, thumbs: ThumbnailCache, parent=None):
         super().__init__(parent)
         self.thumbs = thumbs
-        self.reviewed: set[int] = set()  # incelenmiş grupların id()'leri
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802
         return QSize(300, self.ROW_HEIGHT)
@@ -119,6 +118,8 @@ class GroupDelegate(QStyledItemDelegate):
         painter.fillRect(r, QColor("#eef4ff") if selected else QColor("white"))
         if selected:
             painter.fillRect(QRect(r.left(), r.top(), 3, r.height()), QColor(ACCENT))
+        elif group.reviewed:
+            painter.fillRect(QRect(r.left(), r.top(), 3, r.height()), QColor(OK))
         painter.setPen(QColor("#f0f0f0"))
         painter.drawLine(r.bottomLeft(), r.bottomRight())
 
@@ -167,9 +168,17 @@ class GroupDelegate(QStyledItemDelegate):
         sub = f"{len(group.members)} dosya · {format_size(group.total_size)}"
         if group.marked:
             sub += f" · {len(group.marked)} işaretli"
-        if id(group) in self.reviewed:
-            sub += " · ✓"
-        painter.drawText(QRect(text_left, r.top() + 33, text_width, 20), Qt.AlignmentFlag.AlignLeft, sub)
+        sub_rect = QRect(text_left, r.top() + 33, text_width, 20)
+        if group.reviewed:
+            # Yeşil "✓ İncelendi" önde, ayrıntılar arkasında
+            done = "✓ İncelendi  "
+            painter.setPen(QColor(OK))
+            painter.drawText(sub_rect, Qt.AlignmentFlag.AlignLeft, done)
+            shift = painter.fontMetrics().horizontalAdvance(done)
+            sub_rect.adjust(shift, 0, 0, 0)
+            painter.setPen(QColor("#666666"))
+        sub = painter.fontMetrics().elidedText(sub, Qt.TextElideMode.ElideRight, sub_rect.width())
+        painter.drawText(sub_rect, Qt.AlignmentFlag.AlignLeft, sub)
         painter.restore()
 
 
@@ -187,6 +196,7 @@ class ThumbCard(QFrame):
     mark_toggled = Signal(str, bool)
     keep_requested = Signal(str)  # "bunu tut" (öneri yap)
     open_folder_requested = Signal(str)
+    discard_group_requested = Signal()  # grubun tamamını gönder
 
     def __init__(self, item: ImageFeatures, group: PhotoGroup, max_sharpness: float, parent=None):
         super().__init__(parent)
@@ -313,11 +323,15 @@ class ThumbCard(QFrame):
         menu = QMenu(self)
         keep = menu.addAction("★ Bunu tut, diğerlerini işaretle")
         folder = menu.addAction("📂 Dosya konumunu aç")
+        menu.addSeparator()
+        discard = menu.addAction("🗑 Grubun tamamını Geri Dönüşüm Kutusu'na gönder…")
         chosen = menu.exec(self.mapToGlobal(pos))
         if chosen == keep:
             self.keep_requested.emit(self.item.path)
         elif chosen == folder:
             self.open_folder_requested.emit(self.item.path)
+        elif chosen == discard:
+            self.discard_group_requested.emit()
 
 
 class ThumbnailGrid(QScrollArea):
@@ -327,6 +341,7 @@ class ThumbnailGrid(QScrollArea):
     mark_toggled = Signal(str, bool)
     keep_requested = Signal(str)
     open_folder_requested = Signal(str)
+    discard_group_requested = Signal()
 
     SPACING = 12
 
@@ -336,7 +351,10 @@ class ThumbnailGrid(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self._container = QWidget()
-        self._container.setStyleSheet("background: transparent;")
+        # Seçicisiz "background: transparent" alt pencerelere de geçer; kartların
+        # sağ tık menüsü de saydam olup siyah kutu gibi görünüyordu.
+        self._container.setObjectName("gridContainer")
+        self._container.setStyleSheet("QWidget#gridContainer { background: transparent; }")
         self._grid = QGridLayout(self._container)
         self._grid.setContentsMargins(16, 14, 16, 14)
         self._grid.setSpacing(self.SPACING)
@@ -348,6 +366,9 @@ class ThumbnailGrid(QScrollArea):
 
     def show_group(self, group: PhotoGroup | None, focused_path: str | None) -> None:
         for card in self.cards.values():
+            # deleteLater olay döngüsünü bekler; o ana kadar eski kart görünmesin
+            self._grid.removeWidget(card)
+            card.hide()
             card.deleteLater()
         self.cards.clear()
         self.thumbs.clear_pending()
@@ -362,6 +383,7 @@ class ThumbnailGrid(QScrollArea):
             card.mark_toggled.connect(self.mark_toggled)
             card.keep_requested.connect(self.keep_requested)
             card.open_folder_requested.connect(self.open_folder_requested)
+            card.discard_group_requested.connect(self.discard_group_requested)
             self.cards[item.path] = card
         self._columns = 0
         self._relayout()
@@ -370,6 +392,12 @@ class ThumbnailGrid(QScrollArea):
     def update_states(self, group: PhotoGroup, focused_path: str | None) -> None:
         for path, card in self.cards.items():
             card.update_state(group, focused=path == focused_path)
+
+    def ensure_visible(self, path: str) -> None:
+        """Klavyeyle seçilen kart görünür alanın dışındaysa kaydırır."""
+        card = self.cards.get(path)
+        if card is not None:
+            self.ensureWidgetVisible(card, 16, 16)
 
     def _relayout(self) -> None:
         width = self.viewport().width() - 32

@@ -14,10 +14,13 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 | 3 | PySide6 arayüzü | ✅ |
 | 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ✅ |
 | 5 | Rapor, ayarlar, EXE paketleme (beta 0.5.0) | ✅ |
+| 0.9 | Klavye kısayolları, incelenen gruplara uygulama, grubun tamamını gönderme, BF logosu | ✅ |
+
+Sürüm notları: [CHANGELOG.md](CHANGELOG.md)
 
 ## Hazır paket (EXE, Python gerekmez)
 
-`BenzerFoto-0.5.0-win64.zip` dosyasını bir klasöre açın, **BenzerFoto.exe**'ye çift tıklayın.
+`BenzerFoto-0.9.0-win64.zip` dosyasını bir klasöre açın, **BenzerFoto.exe**'ye çift tıklayın.
 
 Windows 11'in **Akıllı Uygulama Denetimi** imzasız programları engelleyebilir
 (“Uygulama Denetimi ilkesi bu dosyayı engelledi”). Bu durumda güvenlik ayarını
@@ -58,11 +61,29 @@ python -m benzerfoto
 4. Ortadaki listeden bir grup seçin. ★ önerilen kare korunur, diğerleri kırmızı işaretle
    "ayrılacak" olarak gelir. Kartın kutusuna tıklayarak (ya da Boşluk tuşuyla) işareti
    değiştirebilir, sağ tıklayıp **Bunu tut** ile öneriyi değiştirebilirsiniz.
+   Sağ tıktaki **Dosya konumunu aç**, klasörü fotoğraf seçili olarak açar.
 5. Fare tekerleği önizlemeyi yakınlaştırır, çift tık pencereye sığdırır.
-   Gruplar arasında **Ctrl+←/→** ile gezinilir.
+   Klavye kısayolları (tam liste için **F1**):
 
+   | Tuş | İşlev |
+   |---|---|
+   | Enter | Grubu incelendi olarak işaretle ve sonraki gruba geç |
+   | Page Down / Page Up | Sonraki / önceki grup (Ctrl+→ / Ctrl+← de çalışır) |
+   | → / ← | Gruptaki sonraki / önceki fotoğraf |
+   | Boşluk | Seçili fotoğrafın işaretini aç / kapat |
+   | Delete | Seçili fotoğrafı onay sorarak Geri Dönüşüm Kutusu'na gönder (geri alınabilir) |
+   | F1 | Kısayol listesi |
+
+   Kısayollar hangi panel seçili olursa olsun çalışır; arama kutusuna yazarken devre dışıdır.
+
+   **İnceleme:** bir grubun seçimini değiştirdiğinizde ya da Sonraki / Page Down ile
+   geçtiğinizde grup **✓ İncelendi** olur (sağ üstteki düğmeyle elle de açılıp kapanır).
+   Listede yeşil şeritle görünür; **İncelenmemiş / İncelendi** filtreleri kaç grup kaldığını
+   gösterir. İnceleme durumu ve işaretler önbellek veritabanında dosya bazında saklanır:
+   uygulamayı kapatıp ertesi gün yeniden tarasanız da kaldığınız yerden devam edersiniz.
 6. Alttaki **📦 _benzerler klasörüne taşı** ya da **🗑 Geri Dönüşüm Kutusu'na gönder** ile işaretli
-   dosyaları ayırın. Önce **tüm gruplar** mı yoksa **yalnızca bu grup** mu olduğu sorulur.
+   dosyaları ayırın. Önce **tüm gruplar**, **incelenen gruplar** (örneğin 250 gruptan
+   baktığınız ilk 50'si) ya da **yalnızca bu grup** seçilir.
    - Taşıma: dosya, bulunduğu tarama klasörünün içindeki `_benzerler` klasörüne alt klasör
      yapısı korunarak taşınır (`D:\Foto\2020\a.jpg` → `D:\Foto\_benzerler\2020\a.jpg`).
      Aynı adlı dosya varsa üzerine yazılmaz, `a (2).jpg` olarak taşınır.
@@ -70,6 +91,9 @@ python -m benzerfoto
      Windows dosyayı kalıcı sileceği için işlem yapılmaz. Kutuya sığmayan bir dosya olursa
      Windows ayrıca sorar.
    - Tüm fotoğrafları işaretli gruplar atlanır, korunan klasördeki dosyalar hiçbir zaman işlenmez.
+   - Bir grubun hiçbir fotoğrafını tutmak istemiyorsanız sağ üstteki **⋯** menüsünden (ya da
+     sağ tıkla) **Grubun tamamını Geri Dönüşüm Kutusu'na gönder** seçin. İki ayrı onay istenir;
+     ikincisinde kutuyu işaretlemeden düğme açılmaz. Bu işlem de geri alınabilir.
 7. **📄 Rapor** seçili moddaki tüm grupları kaydeder (sıralama ekrandakiyle aynı):
    - **HTML**: küçük resimler dosyanın içine gömülüdür; tek dosyadır, internetsiz açılır.
    - **CSV**: Excel'de Türkçe karakterler ve sütunlar doğru açılır (UTF-8 BOM, `;` ayırıcı).
@@ -157,8 +181,10 @@ benzerfoto/
   formatting.py Türkçe boyut ve tarih biçimleri
   report.py     CSV ve tek dosyalı HTML rapor
   settings.py   kalıcı ayarlar (varsayılan eşikler, zaman penceresi, işçi sayısı)
+  review.py     inceleme durumu ve işaretlerin kalıcı kaydı (SQLite)
+  assets/       BF logosu (SVG kaynağı, PNG'ler, bf.ico)
   cli.py        komut satırı aracı
   gui/          PySide6 arayüzü (ana pencere, bileşenler, stil, arka plan işleri)
 tests/          pytest testleri
-packaging/      EXE paketi ve zip hazırlama
+packaging/      EXE paketi ve zip hazırlama, logo_uret.py (SVG → PNG/ICO)
 ```

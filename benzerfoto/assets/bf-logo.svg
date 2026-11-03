@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- BenzerFoto logosu: üst üste iki fotoğraf kartı (benzerler) ve "BF" -->
+  <defs>
+    <linearGradient id="front" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <!-- arkadaki kart: benzer fotoğraf -->
+  <rect x="34" y="8" width="214" height="214" rx="44" fill="#bfdbfe"/>
+  <!-- öndeki kart -->
+  <rect x="8" y="34" width="214" height="214" rx="44" fill="url(#front)"/>
+  <!-- B -->
+  <path fill="#ffffff" fill-rule="evenodd"
+        d="M36 94 H92 C110 94 120 104 120 118 C120 128 115 135 107 138
+           C118 141 124 149 124 161 C124 178 112 190 92 190 H36 Z
+           M60 114 V132 H88 C94 132 97 128 97 123 C97 118 94 114 88 114 Z
+           M60 150 V170 H90 C97 170 100 165 100 160 C100 155 97 150 90 150 Z"/>
+  <!-- F -->
+  <path fill="#ffffff" d="M136 94 H196 V115 H160 V133 H190 V153 H160 V190 H136 Z"/>
+</svg>
