@@ -217,3 +217,29 @@ def test_report_disabled_during_scan_and_failure_is_reported(app, tmp_path: Path
     assert shown and "Rapor kaydedilemedi" in shown[0]
     assert not w._busy and w.report_button.isEnabled()
     w.close()
+
+
+def _mean_lightness(widget) -> float:
+    img = widget.grab().toImage()
+    values = [img.pixelColor(x, y).lightness() for x in range(0, img.width(), 3) for y in range(0, img.height(), 3)]
+    return sum(values) / len(values)
+
+
+def test_card_context_menu_is_readable(app):
+    """Kart menüsü saydam (siyah kutu) değil, açık zeminli çizilir; tema açık kalır."""
+    from PySide6.QtGui import QPalette
+    from PySide6.QtWidgets import QMenu
+
+    from benzerfoto.gui.images import ThumbnailCache
+    from benzerfoto.gui.style import apply_theme
+    from benzerfoto.gui.widgets import ThumbnailGrid
+
+    apply_theme(app)
+    assert app.palette().color(QPalette.ColorRole.Window).lightness() > 200
+    grid = ThumbnailGrid(ThumbnailCache())
+    menu = QMenu(grid._container)  # kartlar bu kabın içinde durur
+    menu.addAction("★ Bunu tut, diğerlerini işaretle")
+    menu.addAction("📂 Dosya konumunu aç")
+    menu.ensurePolished()
+    menu.adjustSize()
+    assert _mean_lightness(menu) > 200

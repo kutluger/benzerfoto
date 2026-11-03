@@ -336,7 +336,10 @@ class ThumbnailGrid(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self._container = QWidget()
-        self._container.setStyleSheet("background: transparent;")
+        # Seçicisiz "background: transparent" alt pencerelere de geçer; kartların
+        # sağ tık menüsü de saydam olup siyah kutu gibi görünüyordu.
+        self._container.setObjectName("gridContainer")
+        self._container.setStyleSheet("QWidget#gridContainer { background: transparent; }")
         self._grid = QGridLayout(self._container)
         self._grid.setContentsMargins(16, 14, 16, 14)
         self._grid.setSpacing(self.SPACING)

@@ -12,6 +12,23 @@ TAG_COLORS = {
     "scene": ("#dbeafe", "#1e40af"),
 }
 
+def apply_theme(app) -> None:
+    """Uygulamaya açık temayı ve stil sayfasını uygular.
+
+    Arayüz açık renkler için tasarlandı. Windows koyu temadayken Qt koyu bir
+    palet seçer; stil sayfasının değinmediği yerler (menü, iletişim pencereleri)
+    koyu zemin üstünde koyu yazıyla okunmaz olur. Bu yüzden açık tema zorlanır.
+    """
+    from PySide6.QtCore import Qt
+
+    app.setStyle("Fusion")  # her Windows sürümünde aynı görünüm
+    hints = app.styleHints()
+    if hasattr(hints, "setColorScheme"):  # Qt 6.8+
+        hints.setColorScheme(Qt.ColorScheme.Light)
+    app.setPalette(app.style().standardPalette())
+    app.setStyleSheet(STYLESHEET)
+
+
 STYLESHEET = f"""
 QMainWindow, QWidget#centralArea {{ background: #f3f3f3; }}
 QWidget {{ font-size: 13px; color: #1f2328; }}
@@ -99,6 +116,14 @@ QProgressBar#sharpBar[level="high"]::chunk {{ background: {OK}; }}
 QFrame#previewFrame {{ background: white; border: 1px solid #d0d7de; border-radius: 8px; }}
 QGraphicsView#previewView {{ background: #222222; border: none; }}
 QLabel#zoomBadge {{ background: rgba(0,0,0,150); color: white; border-radius: 6px; padding: 3px 9px; font-size: 12px; }}
+
+/* Açılır menüler ve ipuçları: Windows koyu temada da okunur kalsın */
+QMenu {{ background: #ffffff; color: #1f2328; border: 1px solid #c8ced5; border-radius: 6px; padding: 4px; }}
+QMenu::item {{ padding: 6px 18px 6px 12px; border-radius: 4px; background: transparent; }}
+QMenu::item:selected {{ background: #eef4ff; color: #1f2328; }}
+QMenu::item:disabled {{ color: #9aa0a6; }}
+QMenu::separator {{ height: 1px; background: #e5e7eb; margin: 4px 6px; }}
+QToolTip {{ background: #ffffff; color: #1f2328; border: 1px solid #c8ced5; padding: 4px 6px; }}
 
 QStatusBar {{ background: #f0f0f0; border-top: 1px solid #dddddd; color: #555555; font-size: 12px; }}
 QSplitter::handle {{ background: transparent; }}
