@@ -129,6 +129,8 @@ QMenu::item:disabled {{ color: #9aa0a6; }}
 QMenu::separator {{ height: 1px; background: #e5e7eb; margin: 4px 6px; }}
 QToolTip {{ background: #ffffff; color: #1f2328; border: 1px solid #c8ced5; padding: 4px 6px; }}
 
+QPushButton#statusLink {{ background: transparent; border: none; color: {ACCENT}; padding: 0 8px; font-size: 12px; }}
+QPushButton#statusLink:hover {{ text-decoration: underline; }}
 QStatusBar {{ background: #f0f0f0; border-top: 1px solid #dddddd; color: #555555; font-size: 12px; }}
 QSplitter::handle {{ background: transparent; }}
 """

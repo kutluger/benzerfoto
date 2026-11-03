@@ -58,6 +58,7 @@ from benzerfoto.gui.confirm import DiscardGroupDialog
 from benzerfoto.gui.history import HistoryDialog
 from benzerfoto.gui.icon import app_icon
 from benzerfoto.gui.settings_dialog import SettingsDialog, window_text
+from benzerfoto.gui.shortcuts_help import ShortcutsDialog
 from benzerfoto.gui.images import ThumbnailCache, load_qimage
 from benzerfoto.journal import KIND_MOVE, KIND_TRASH, Journal, Operation
 from benzerfoto.gui.style import TAG_COLORS
@@ -478,6 +479,13 @@ class MainWindow(QMainWindow):
         sb.addWidget(self.cache_status)
         sb.addWidget(QLabel("   "))
         sb.addWidget(self.rule_status)
+        self.help_button = QPushButton("⌨ Kısayollar (F1)")
+        self.help_button.setObjectName("statusLink")
+        self.help_button.setFlat(True)
+        self.help_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.help_button.setToolTip("Klavye kısayollarını göster")
+        self.help_button.clicked.connect(self._show_shortcuts)
+        sb.addPermanentWidget(self.help_button)
         sb.addPermanentWidget(QLabel(f"Kalıcı silme yapılmaz · BenzerFoto {__version__}  "))
 
     def _build_shortcuts(self) -> None:
@@ -496,6 +504,7 @@ class MainWindow(QMainWindow):
             Key.Key_Left: (lambda: self._step_photo(-1), lambda: self._step_group(-1), True),
             Key.Key_Space: (self._toggle_focused_mark, None, False),
             Key.Key_Delete: (self._trash_focused, None, False),
+            Key.Key_F1: (self._show_shortcuts, None, False),
         }
         QApplication.instance().installEventFilter(self)
 
@@ -515,7 +524,7 @@ class MainWindow(QMainWindow):
             return False
         # Pencerenin kendi odak bileşeni: pencere etkin değilken de doğru sonuç verir
         focus = self.focusWidget()
-        if isinstance(focus, TEXT_INPUTS) and not getattr(focus, "isReadOnly", lambda: False)():
+        if event.key() != Qt.Key.Key_F1 and isinstance(focus, TEXT_INPUTS) and not getattr(focus, "isReadOnly", lambda: False)():
             return False
         plain, with_ctrl, repeat_ok = entry
         mods = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
@@ -1477,6 +1486,9 @@ class MainWindow(QMainWindow):
         box.exec()
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _show_shortcuts(self) -> None:
+        ShortcutsDialog(self).exec()
 
     def _show_settings(self) -> None:
         dlg = SettingsDialog(self.app_settings, self)

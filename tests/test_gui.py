@@ -504,3 +504,22 @@ def test_discard_whole_group_double_confirmation(app, tmp_path: Path, monkeypatc
     assert sent == [paths[1:]]
     assert all(g is not group for g in w.groups_by_kind[GroupKind.SCENE])  # tek fotoğraf kaldı, grup düştü
     w.close()
+
+
+def test_f1_opens_shortcut_help_even_from_search_box(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from benzerfoto.gui import shortcuts_help
+
+    opened = []
+    monkeypatch.setattr(shortcuts_help.ShortcutsDialog, "exec", lambda self: opened.append(self.label.text()) or 0)
+    w = _window_with_group(app, tmp_path, monkeypatch)
+    w.show()
+    w.search_edit.setFocus()
+    QTest.keyClick(w.search_edit, Qt.Key.Key_F1)
+    w.help_button.click()
+    assert len(opened) == 2
+    for key in ("Page Down", "Boşluk", "Delete", "F1"):
+        assert key in opened[0]
+    w.close()
