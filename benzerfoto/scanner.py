@@ -18,7 +18,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wai
 from dataclasses import dataclass, field
 
 from benzerfoto.cache import FeatureCache
-from benzerfoto.config import DB_BATCH_SIZE
+from benzerfoto.config import DB_BATCH_SIZE, SUPPORTED_EXTENSIONS
 from benzerfoto.discovery import FileEntry, iter_image_files
 from benzerfoto.features import ImageFeatures, extract_features
 
@@ -72,6 +72,7 @@ def scan(
     workers: int | None = None,
     progress: ProgressCallback | None = None,
     cancel_event: threading.Event | None = None,
+    extensions: Iterable[str] = SUPPORTED_EXTENSIONS,
 ) -> ScanResult:
     """Klasörleri tarar ve sonucu döndürür.
 
@@ -87,7 +88,7 @@ def scan(
 
     # 1) Dosyaları bul
     entries: list[FileEntry] = []
-    for entry in iter_image_files(roots, excludes, recursive):
+    for entry in iter_image_files(roots, excludes, recursive, frozenset(e.lower() for e in extensions)):
         entries.append(entry)
         if len(entries) % 500 == 0:
             notify(ScanProgress("discover", done=len(entries), current_path=entry.path))

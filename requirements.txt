@@ -1,10 +1,22 @@
 # Çalışma bağımlılıkları
-Pillow>=10.0
-pillow-heif>=0.16
-ImageHash>=4.3
-numpy>=1.26
+# Sürümler sabitlendi: Windows 11 Akıllı Uygulama Denetimi, yeni çıkmış ve henüz
+# "tanınmayan" DLL'leri engelleyebiliyor. Bir süredir yaygın kullanılan sürümler
+# bu engele daha az takılır. Python 3.14 için hazır paket (wheel) sunan ilk
+# sürümler ayrıca belirtildi; yoksa pip kaynak koddan derlemeye kalkar.
+numpy==2.2.6; python_version < "3.14"
+numpy==2.3.4; python_version >= "3.14"
+scipy==1.15.3; python_version < "3.14"
+scipy==1.16.3; python_version >= "3.14"
+PyWavelets==1.8.0; python_version < "3.14"
+PyWavelets==1.9.0; python_version >= "3.14"
+pillow-heif==0.22.0; python_version < "3.14"
+pillow-heif==1.1.1; python_version >= "3.14"
+PySide6==6.8.3; python_version < "3.14"
+PySide6==6.10.1; python_version >= "3.14"
+Pillow==11.3.0
+ImageHash==4.3.1
 
 # Sonraki aşamalarda eklenecekler:
-# PySide6        (3. aşama: arayüz)
-# send2trash     (4. aşama: geri dönüşüm kutusu)
+# (Geri Dönüşüm Kutusu için ek paket gerekmez: Windows'un kendi işlevi kullanılır,
+#  send2trash büyük dosyaları uyarmadan kalıcı silebildiği için tercih edilmedi.)
 # pyinstaller    (5. aşama: EXE paketleme)
