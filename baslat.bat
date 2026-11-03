@@ -10,7 +10,7 @@ rem ============================================================
 chcp 65001 >nul
 setlocal EnableExtensions
 
-set "BRANCH=asama-2-gruplama"
+set "BRANCH=main"
 set "ZIP_URL=https://github.com/kutluger/benzerfoto/archive/refs/heads/%BRANCH%.zip"
 set "PY_VERSION=3.12.7"
 set "PY_URL=https://www.python.org/ftp/python/%PY_VERSION%/python-%PY_VERSION%-amd64.exe"
