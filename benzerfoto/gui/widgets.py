@@ -374,6 +374,12 @@ class ThumbnailGrid(QScrollArea):
         for path, card in self.cards.items():
             card.update_state(group, focused=path == focused_path)
 
+    def ensure_visible(self, path: str) -> None:
+        """Klavyeyle seçilen kart görünür alanın dışındaysa kaydırır."""
+        card = self.cards.get(path)
+        if card is not None:
+            self.ensureWidgetVisible(card, 16, 16)
+
     def _relayout(self) -> None:
         width = self.viewport().width() - 32
         columns = max(1, (width + self.SPACING) // (ThumbCard.IMAGE_W + 2 + self.SPACING))

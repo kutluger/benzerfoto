@@ -260,3 +260,122 @@ def test_app_icon_and_ico_sizes(app):
         sizes = {w for w, _h in ico.info["sizes"]}
     assert {16, 32, 48, 256} <= sizes
     assert set_windows_app_id() == (sys.platform == "win32")
+
+
+def _window_with_two_groups(app, tmp_path: Path, monkeypatch):
+    """İki ayrı sahne grubu (biri 3, biri 2 fotoğraf) olan pencere."""
+    from PySide6.QtCore import QThreadPool
+
+    from benzerfoto.gui.main_window import MainWindow
+
+    for name in ("information", "warning"):
+        monkeypatch.setattr(QtWidgets.QMessageBox, name, staticmethod(lambda *a, **k: None))
+    root = tmp_path / "arsiv"
+    for i in range(3):
+        save_jpeg(make_scene(1, shift=i * 8), root / f"A_{i}.jpg", f"2025:08:14 18:42:{10 + i * 5:02}")
+    for i in range(2):
+        save_jpeg(make_scene(7, shift=i * 8), root / f"B_{i}.jpg", f"2025:09:01 10:00:{10 + i * 5:02}")
+    db = tmp_path / "db.sqlite"
+    with FeatureCache(db) as cache:
+        features = scan([root], cache, workers=1).features
+    w = MainWindow(db, ini_settings(tmp_path))
+    w.features = features
+    w._regroup_all()
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    assert len(w.visible_groups) == 2
+    return w
+
+
+def test_keyboard_navigation(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = _window_with_two_groups(app, tmp_path, monkeypatch)
+    w.show()
+    first, second = w.visible_groups
+
+    # Page Down / Page Up gruplar arasında gezer; odak hangi panelde olursa olsun
+    for widget in (w.group_view, w.threshold_slider, w.scan_button):
+        widget.setFocus()
+        w.group_view.setCurrentIndex(w.group_model.index(0))
+        QTest.keyClick(widget, Qt.Key.Key_PageDown)
+        assert w.current_group is second
+        QTest.keyClick(widget, Qt.Key.Key_PageUp)
+        assert w.current_group is first
+
+    # ← / → grubun içindeki fotoğraflar arasında gezer, odak çerçevesi kartta
+    paths = [m.path for m in first.members]
+    w._focus_item(paths[0])
+    w.group_view.setFocus()
+    QTest.keyClick(w.group_view, Qt.Key.Key_Right)
+    assert w.focused_path == paths[1]
+    assert w.grid.cards[paths[1]].property("focused") is True
+    assert w.grid.cards[paths[0]].property("focused") is False
+    QTest.keyClick(w.group_view, Qt.Key.Key_Right)
+    QTest.keyClick(w.group_view, Qt.Key.Key_Right)  # sonda durur
+    assert w.focused_path == paths[2]
+    QTest.keyClick(w.group_view, Qt.Key.Key_Left)
+    assert w.focused_path == paths[1]
+
+    # Boşluk odaktaki fotoğrafın işaretini değiştirir
+    was = paths[1] in first.marked
+    QTest.keyClick(w.group_view, Qt.Key.Key_Space)
+    assert (paths[1] in first.marked) is not was
+    assert w.grid.cards[paths[1]].mark_box.isChecked() is not was
+
+    # Arama kutusuna yazarken kısayollar çalışmaz
+    focused, group = w.focused_path, w.current_group
+    w.search_edit.setFocus()
+    QTest.keyClick(w.search_edit, Qt.Key.Key_Right)
+    QTest.keyClick(w.search_edit, Qt.Key.Key_Space)
+    QTest.keyClick(w.search_edit, Qt.Key.Key_PageDown)
+    assert w.focused_path == focused == paths[1]
+    assert (paths[1] in first.marked) is not was
+    assert w.current_group is group
+    assert w.search_edit.text() == " "
+    w.close()
+
+
+def test_delete_key_trashes_only_focused_photo(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import QThreadPool, Qt
+    from PySide6.QtTest import QTest
+
+    from benzerfoto import actions, recycle
+
+    w = _window_with_two_groups(app, tmp_path, monkeypatch)
+    w.show()
+    group = w.visible_groups[0]
+    paths = [m.path for m in group.members]
+    w._focus_item(paths[1])
+
+    sent = []
+    monkeypatch.setattr(recycle, "is_trash_supported", lambda p: True)
+    monkeypatch.setattr(
+        actions, "send_to_trash", lambda db, ps, progress=None: sent.append(list(ps)) or actions.ActionResult(op_id=1, done=list(ps))
+    )
+    # Önce vazgeç: hiçbir şey gönderilmez
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.No))
+    w.group_view.setFocus()
+    QTest.keyClick(w.group_view, Qt.Key.Key_Delete)
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    assert sent == []
+
+    # Onaylanınca yalnızca odaktaki dosya gider, odak yanındaki fotoğrafa geçer
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))
+    QTest.keyClick(w.group_view, Qt.Key.Key_Delete)
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    assert sent == [[paths[1]]]
+    assert w.current_group is group
+    assert [m.path for m in group.members] == [paths[0], paths[2]]
+    assert w.focused_path == paths[2]
+
+    # Korunan fotoğraf gönderilmez
+    group.protected.add(paths[2])
+    QTest.keyClick(w.group_view, Qt.Key.Key_Delete)
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    assert sent == [[paths[1]]]
+    w.close()

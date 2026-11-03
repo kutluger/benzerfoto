@@ -9,10 +9,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QKeySequence, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, QSettings, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QFont, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -26,12 +28,14 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QProgressDialog,
     QPushButton,
     QRadioButton,
     QSlider,
     QSplitter,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -73,7 +77,9 @@ FOLDER_ICONS = {FOLDER_SCAN: "📁", FOLDER_EXCLUDE: "🚫", FOLDER_PROTECT: "�
 FORMATS = [("JPG", (".jpg", ".jpeg")), ("HEIC", (".heic", ".heif")), ("PNG", (".png",)), ("WEBP", (".webp",))]
 REPORT_FILTER_HTML = "HTML raporu, küçük resimli (*.html)"
 REPORT_FILTER_CSV = "CSV tablosu, Excel için (*.csv)"
-SORT_CHOICES =["En çok yer kazandıran", "En kalabalık", "Tarihe göre (yeni → eski)"]
+SORT_CHOICES = ["En çok yer kazandıran", "En kalabalık", "Tarihe göre (yeni → eski)"]
+# Odakta bunlardan biri varken klavye kısayolları devre dışı: kullanıcı yazı yazıyor
+TEXT_INPUTS = (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)
 
 
 def section_title(text: str) -> QLabel:
@@ -100,6 +106,7 @@ class MainWindow(QMainWindow):
         self.visible_groups: list[PhotoGroup] = []
         self.current_group: PhotoGroup | None = None
         self.focused_path: str | None = None
+        self._shown_group: PhotoGroup | None = None  # sağ panelde en son çizilen grup
         self.scan_thread: ScanThread | None = None
         self._group_request = 0  # eski gruplama sonuçlarını yok saymak için sayaç
         self._preview_request = 0
@@ -350,10 +357,10 @@ class MainWindow(QMainWindow):
         hl.addWidget(self.group_time)
         hl.addStretch(1)
         self.prev_button = QPushButton("◀ Önceki")
-        self.prev_button.setToolTip("Önceki grup (Ctrl+←)")
+        self.prev_button.setToolTip("Önceki grup (Page Up)")
         self.prev_button.clicked.connect(lambda: self._step_group(-1))
         self.next_button = QPushButton("Sonraki ▶")
-        self.next_button.setToolTip("Sonraki grup (Ctrl+→)")
+        self.next_button.setToolTip("Sonraki grup (Page Down)")
         self.next_button.clicked.connect(lambda: self._step_group(1))
         self.reset_button = QPushButton("Önerileni seç")
         self.reset_button.setToolTip("★ dışındakileri işaretle (varsayılan)")
@@ -445,9 +452,56 @@ class MainWindow(QMainWindow):
         sb.addPermanentWidget(QLabel(f"Kalıcı silme yapılmaz · BenzerFoto {__version__}  "))
 
     def _build_shortcuts(self) -> None:
-        QShortcut(QKeySequence("Ctrl+Right"), self, activated=lambda: self._step_group(1))
-        QShortcut(QKeySequence("Ctrl+Left"), self, activated=lambda: self._step_group(-1))
-        QShortcut(QKeySequence("Space"), self, activated=self._toggle_focused_mark)
+        """Klavye kısayolları: hangi panel odakta olursa olsun çalışır.
+
+        QShortcut yerine uygulama düzeyinde olay süzgeci kullanılır; böylece grup
+        listesi ya da kaydırıcı gibi okları kendisi kullanan bileşenler kısayolu
+        yutmaz. Metin kutusuna yazılırken kısayollar devre dışıdır.
+        Tablo: tuş → (düz basış, Ctrl ile, basılı tutunca tekrarlansın mı).
+        """
+        Key = Qt.Key
+        self._key_actions = {
+            Key.Key_PageDown: (lambda: self._step_group(1), None, True),
+            Key.Key_PageUp: (lambda: self._step_group(-1), None, True),
+            Key.Key_Right: (lambda: self._step_photo(1), lambda: self._step_group(1), True),
+            Key.Key_Left: (lambda: self._step_photo(-1), lambda: self._step_group(-1), True),
+            Key.Key_Space: (self._toggle_focused_mark, None, False),
+            Key.Key_Delete: (self._trash_focused, None, False),
+        }
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt adı)
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and isinstance(obj, QWidget)
+            and obj.window() is self
+            and self._handle_key(event)
+        ):
+            return True
+        return super().eventFilter(obj, event)
+
+    def _handle_key(self, event) -> bool:
+        entry = self._key_actions.get(event.key())
+        if entry is None:
+            return False
+        # Pencerenin kendi odak bileşeni: pencere etkin değilken de doğru sonuç verir
+        focus = self.focusWidget()
+        if isinstance(focus, TEXT_INPUTS) and not getattr(focus, "isReadOnly", lambda: False)():
+            return False
+        plain, with_ctrl, repeat_ok = entry
+        mods = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+        if mods == Qt.KeyboardModifier.NoModifier:
+            action = plain
+        elif mods == Qt.KeyboardModifier.ControlModifier:
+            action = with_ctrl
+        else:
+            action = None
+        if action is None:
+            return False
+        if event.isAutoRepeat() and not repeat_ok:
+            return True  # basılı tutulan Boşluk/Delete tekrar tekrar işlem yapmasın
+        action()
+        return True
 
     # ------------------------------------------------------------------
     # Klasör yönetimi
@@ -690,7 +744,13 @@ class MainWindow(QMainWindow):
     # Grup listesi, filtre, gezinme
     # ------------------------------------------------------------------
 
-    def _apply_filter(self) -> None:
+    def _apply_filter(self, keep_row: bool = False) -> None:
+        """Grup listesini filtreler ve sıralar.
+
+        keep_row: seçili grup listeden düşerse (ör. dosyaları gönderildi) başa
+        dönmek yerine aynı sıradaki gruba geçilir.
+        """
+        old_row = self.group_view.currentIndex().row()
         groups = list(self.groups_by_kind[self.current_kind()])
         query = self.search_edit.text().strip().lower()
         if query:
@@ -715,7 +775,10 @@ class MainWindow(QMainWindow):
         self.empty_label.setVisible(not groups)
 
         if groups:
-            row = groups.index(previous) if previous in groups else 0
+            if previous in groups:
+                row = groups.index(previous)
+            else:
+                row = min(max(old_row, 0), len(groups) - 1) if keep_row else 0
             self.group_view.setCurrentIndex(self.group_model.index(row))
         else:
             self._show_group(None)
@@ -762,7 +825,11 @@ class MainWindow(QMainWindow):
         row = self.visible_groups.index(group) + 1 if group in self.visible_groups else 0
         self.group_label.setText(f"Grup #{row} · {len(group.members)} fotoğraf · {format_size(group.total_size)}")
         self.group_time.setText(scene_time_range(group))
-        self.focused_path = group.best_path or group.members[0].path
+        # Aynı grup yeniden gösteriliyorsa (filtre, silme) odaktaki fotoğraf korunur
+        same = group is self._shown_group and self.focused_path in {m.path for m in group.members}
+        if not same:
+            self.focused_path = group.best_path or group.members[0].path
+        self._shown_group = group
         self.grid.show_group(group, self.focused_path)
         self._show_preview(self.focused_path)
         self._update_summary()
@@ -827,6 +894,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "BenzerFoto", "Gruptaki tüm fotoğrafları işaretlediniz. En az birini tutmanız önerilir.")
         self._refresh_current_group()
 
+    def _step_photo(self, delta: int) -> None:
+        """Seçili grubun içinde odaktaki fotoğrafı değiştirir (← / →)."""
+        group = self.current_group
+        if group is None or not group.members:
+            return
+        paths = [m.path for m in group.members]  # ızgaradaki sırayla aynı
+        if self.focused_path in paths:
+            index = max(0, min(len(paths) - 1, paths.index(self.focused_path) + delta))
+        else:
+            index = 0
+        self._focus_item(paths[index])
+        self.grid.ensure_visible(paths[index])
+
     def _toggle_focused_mark(self) -> None:
         if self.current_group and self.focused_path:
             self._on_mark_toggled(self.focused_path, self.focused_path not in self.current_group.marked)
@@ -849,6 +929,60 @@ class MainWindow(QMainWindow):
         if self.current_group:
             self.current_group.marked.clear()
             self._refresh_current_group()
+
+    def _trash_focused(self) -> None:
+        """Delete: yalnızca odaktaki fotoğrafı onay sorarak Geri Dönüşüm Kutusu'na gönderir."""
+        group, path = self.current_group, self.focused_path
+        if not self._is_idle() or group is None or path is None:
+            return
+        item = self._item(path)
+        if item is None:
+            return
+        name = os.path.basename(path)
+        if path in group.protected:
+            QMessageBox.information(self, "BenzerFoto", f"{name} korunan bir klasörde; gönderilemez.")
+            return
+        if not recycle.is_trash_supported(path):
+            QMessageBox.warning(
+                self,
+                "BenzerFoto",
+                f"{name} Geri Dönüşüm Kutusu olmayan bir sürücüde (ağ ya da USB). Windows kalıcı "
+                f"sileceği için gönderilmedi. “{DUPLICATES_FOLDER_NAME} klasörüne taşı” seçeneğini kullanın.",
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "BenzerFoto",
+            f"Bu fotoğraf Geri Dönüşüm Kutusu'na gönderilsin mi?\n\n{name} · {format_size(item.size)}\n"
+            f"{os.path.dirname(path)}\n\nGeri Al ile geri getirilebilir.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        index = [m.path for m in group.members].index(path)
+        db_path = self.db_path
+        self._start_job(
+            "Geri Dönüşüm Kutusu'na gönderiliyor…",
+            lambda progress: actions.send_to_trash(db_path, [path], progress),
+            lambda result: self._on_single_trash_done(result, group, index),
+        )
+
+    def _on_single_trash_done(self, result: actions.ActionResult, group: PhotoGroup, index: int) -> None:
+        """Tek dosya gönderildi: bilgi penceresi açmadan durum çubuğunda haber verir."""
+        self._apply_removal(set(result.done))
+        self._refresh_undo_state()
+        if result.failed:
+            QMessageBox.warning(self, "BenzerFoto", self._failure_text(result.failed))
+            return
+        if self.current_group is group and group.members:
+            path = group.members[min(index, len(group.members) - 1)].path
+            self._focus_item(path)
+            self.grid.ensure_visible(path)
+        self.statusBar().showMessage(
+            f"{format_count(len(result.done))} dosya Geri Dönüşüm Kutusu'na gönderildi. Geri Al ile geri alabilirsiniz.",
+            15000,
+        )
 
     def _open_in_explorer(self, path: str) -> None:
         if sys.platform == "win32":
@@ -1043,7 +1177,7 @@ class MainWindow(QMainWindow):
             self.groups_by_kind[kind] = kept
         previous = self.current_group
         self._update_mode_labels()
-        self._apply_filter()
+        self._apply_filter(keep_row=True)
         if previous is not None and self.current_group is previous:
             self._show_group(previous)  # kartları yenile
         self._update_cache_status()
@@ -1288,4 +1422,5 @@ class MainWindow(QMainWindow):
             self.scan_thread.wait()
         self.settings.setValue("geometry", self.saveGeometry())
         self._save_settings()
+        QApplication.instance().removeEventFilter(self)
         super().closeEvent(event)
