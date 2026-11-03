@@ -523,3 +523,27 @@ def test_f1_opens_shortcut_help_even_from_search_box(app, tmp_path: Path, monkey
     for key in ("Page Down", "Boşluk", "Delete", "F1"):
         assert key in opened[0]
     w.close()
+
+
+def test_enter_marks_reviewed_and_moves_on(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = _window_with_two_groups(app, tmp_path, monkeypatch)
+    w.show()
+    first, second = w.visible_groups
+    w.group_view.setCurrentIndex(w.group_model.index(0))
+    w.scan_button.setFocus()  # odaktaki düğmeye basılmamalı, kısayol çalışmalı
+    QTest.keyClick(w.scan_button, Qt.Key.Key_Return)
+    assert first.reviewed and w.current_group is second
+    QTest.keyClick(w.group_view, Qt.Key.Key_Enter)  # son grup: incelendi olur, yerinde kalır
+    assert second.reviewed and w.current_group is second
+    assert w.scan_thread is None
+
+    # Arama kutusunda Enter kısayol değildir
+    second.reviewed = False
+    w.search_edit.setFocus()
+    QTest.keyClick(w.search_edit, Qt.Key.Key_Return)
+    assert not second.reviewed
+    w.close()
+

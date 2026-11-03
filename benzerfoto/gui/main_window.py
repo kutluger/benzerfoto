@@ -504,6 +504,8 @@ class MainWindow(QMainWindow):
             Key.Key_Left: (lambda: self._step_photo(-1), lambda: self._step_group(-1), True),
             Key.Key_Space: (self._toggle_focused_mark, None, False),
             Key.Key_Delete: (self._trash_focused, None, False),
+            Key.Key_Return: (self._review_and_next, None, False),
+            Key.Key_Enter: (self._review_and_next, None, False),  # sayısal tuş takımındaki Enter
             Key.Key_F1: (self._show_shortcuts, None, False),
         }
         QApplication.instance().installEventFilter(self)
@@ -949,6 +951,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "BenzerFoto", "Gruptaki tüm fotoğrafları işaretlediniz. En az birini tutmanız önerilir.")
         self._mark_reviewed(group)
         self._refresh_current_group()
+
+    def _review_and_next(self) -> None:
+        """Enter: grubu incelendi yapar ve sonraki gruba geçer (sondaysa yerinde kalır)."""
+        if self.current_group is None:
+            return
+        self._mark_reviewed(self.current_group)
+        self._step_group(1)
 
     def _step_photo(self, delta: int) -> None:
         """Seçili grubun içinde odaktaki fotoğrafı değiştirir (← / →)."""

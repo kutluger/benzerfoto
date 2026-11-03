@@ -9,13 +9,14 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 # (tuş, açıklama) — ana penceredeki kısayollarla aynı tutulmalı
 SHORTCUTS: list[tuple[str, str]] = [
+    ("Enter", "Grubu incelendi olarak işaretle ve sonraki gruba geç"),
     ("Page Down  /  Ctrl+→", "Sonraki grup (geçilen grup incelendi sayılır)"),
     ("Page Up  /  Ctrl+←", "Önceki grup"),
     ("→  /  ←", "Gruptaki sonraki / önceki fotoğraf"),
     ("Boşluk", "Seçili fotoğrafın işaretini aç / kapat"),
     ("Delete", "Seçili fotoğrafı onay sorarak Geri Dönüşüm Kutusu'na gönder"),
     ("Çift tık (kart)", "İşareti aç / kapat"),
-    ("Sağ tık (kart)", "Bunu tut · Dosya konumunu aç · Grubun tamamını gönder"),
+    ("Sağ tık (kart)", "Bunu tut · Dosya konumunu aç (fotoğraf seçili gelir) · Grubun tamamını gönder"),
     ("Tekerlek (önizleme)", "Yakınlaştır / uzaklaştır; çift tık pencereye sığdırır"),
     ("F1", "Bu pencere"),
 ]
