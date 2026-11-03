@@ -547,3 +547,22 @@ def test_enter_marks_reviewed_and_moves_on(app, tmp_path: Path, monkeypatch):
     assert not second.reviewed
     w.close()
 
+
+def test_explorer_command_selects_file_with_real_case(tmp_path: Path):
+    import os
+    import sys
+
+    from benzerfoto.discovery import normalize_path
+    from benzerfoto.gui.main_window import explorer_command
+
+    photo = tmp_path / "Tatil Klasörü" / "IMG_0001.JPG"
+    photo.parent.mkdir()
+    photo.write_bytes(b"x")
+    command = explorer_command(normalize_path(str(photo)))  # önbellekteki gibi küçük harf
+    if sys.platform != "win32":
+        assert command is None
+        return
+    assert command == ["explorer", "/select,", os.path.realpath(photo)]
+    assert command[2].endswith("Tatil Klasörü" + os.sep + "IMG_0001.JPG")  # gerçek yazım
+    photo.unlink()  # dosya taşınmışsa klasör açılır
+    assert explorer_command(normalize_path(str(photo))) == ["explorer", os.path.realpath(photo.parent)]

@@ -14,10 +14,14 @@
   kapatılıp yeniden tarama yapılsa da kararlar geri gelir.
 - **Grubun tamamını gönder**: iki aşamalı onayla bir grubun bütün fotoğrafları Geri
   Dönüşüm Kutusu'na (geri alınabilir; korunan klasörler hariç).
+- Enter: grubu incelendi olarak işaretler ve sonraki gruba geçer.
 - Kısayol yardımı: F1 ya da durum çubuğundaki "Kısayollar".
 - BF logosu: pencere, görev çubuğu ve EXE simgesi.
 
 **Düzeltmeler**
+- "Dosya konumunu aç" klasörü açıyor ama fotoğrafı seçmiyordu (Gezgin küçük harfe
+  çevrilmiş yolda dosyayı bulamıyor); artık fotoğraf seçili gelir. Dosya taşınmışsa
+  klasör açılır.
 - Fotoğraf kartındaki sağ tık menüsü siyah kutu olarak açılıyordu; menü artık okunur ve
   Windows koyu temadayken de uygulama açık renkli kalır.
 - Arama yapınca ya da bir fotoğraf gönderilince seçili fotoğraf öneriye geri dönmüyor;

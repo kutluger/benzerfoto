@@ -86,6 +86,25 @@ SORT_CHOICES = ["En çok yer kazandıran", "En kalabalık", "Tarihe göre (yeni 
 TEXT_INPUTS = (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)
 
 
+def explorer_command(path: str) -> list[str] | None:
+    """Dosyayı Windows Gezgini'nde seçili olarak açan komut.
+
+    Önbellekteki yollar küçük harfe çevrilmiştir; Gezgin böyle bir yolda klasörü
+    açar ama dosyayı seçmez. Bu yüzden dosyanın diskteki gerçek yazımı kullanılır.
+    Dosya artık yoksa (taşınmış/silinmiş) yalnızca klasörü açar.
+    Windows dışında ya da klasör de yoksa None döner.
+    """
+    if sys.platform != "win32":
+        return None
+    real = os.path.normpath(os.path.realpath(path))
+    if os.path.isfile(real):
+        return ["explorer", "/select,", real]
+    folder = os.path.dirname(real)
+    if os.path.isdir(folder):
+        return ["explorer", folder]
+    return None
+
+
 def section_title(text: str) -> QLabel:
     label = QLabel(text.upper())
     label.setObjectName("sectionTitle")
@@ -1160,10 +1179,13 @@ class MainWindow(QMainWindow):
         )
 
     def _open_in_explorer(self, path: str) -> None:
-        if sys.platform == "win32":
-            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        command = explorer_command(path)
+        if command is not None:
+            subprocess.Popen(command)
+        elif os.path.isdir(os.path.dirname(path)):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
         else:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+            QMessageBox.information(self, "BenzerFoto", f"Klasör bulunamadı:\n{os.path.dirname(path)}")
 
     # ------------------------------------------------------------------
     # Dosya işlemleri: taşıma, geri dönüşüm, geri alma (4. aşama)

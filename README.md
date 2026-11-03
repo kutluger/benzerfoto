@@ -61,11 +61,13 @@ python -m benzerfoto
 4. Ortadaki listeden bir grup seçin. ★ önerilen kare korunur, diğerleri kırmızı işaretle
    "ayrılacak" olarak gelir. Kartın kutusuna tıklayarak (ya da Boşluk tuşuyla) işareti
    değiştirebilir, sağ tıklayıp **Bunu tut** ile öneriyi değiştirebilirsiniz.
+   Sağ tıktaki **Dosya konumunu aç**, klasörü fotoğraf seçili olarak açar.
 5. Fare tekerleği önizlemeyi yakınlaştırır, çift tık pencereye sığdırır.
    Klavye kısayolları (tam liste için **F1**):
 
    | Tuş | İşlev |
    |---|---|
+   | Enter | Grubu incelendi olarak işaretle ve sonraki gruba geç |
    | Page Down / Page Up | Sonraki / önceki grup (Ctrl+→ / Ctrl+← de çalışır) |
    | → / ← | Gruptaki sonraki / önceki fotoğraf |
    | Boşluk | Seçili fotoğrafın işaretini aç / kapat |
