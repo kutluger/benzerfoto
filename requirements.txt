@@ -19,4 +19,4 @@ ImageHash==4.3.1
 # Sonraki aşamalarda eklenecekler:
 # (Geri Dönüşüm Kutusu için ek paket gerekmez: Windows'un kendi işlevi kullanılır,
 #  send2trash büyük dosyaları uyarmadan kalıcı silebildiği için tercih edilmedi.)
-# pyinstaller    (5. aşama: EXE paketleme)
+# EXE paketleme için: requirements-build.txt (PyInstaller)
