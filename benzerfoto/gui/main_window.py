@@ -105,6 +105,41 @@ def explorer_command(path: str) -> list[str] | None:
     return None
 
 
+def shell_select(path: str) -> bool:
+    """Dosyayı Windows Kabuk API'siyle (SHOpenFolderAndSelectItems) seçili açar.
+
+    `explorer /select` dosyayı seçer ama kalabalık bir klasörde görünür alana
+    kaydırmaz; bu işlev kaydırır, açık bir Gezgin penceresi varsa onu kullanır.
+    Başarısız olursa False döner (çağıran `explorer /select` ile dener).
+    """
+    if sys.platform != "win32":
+        return False
+    real = os.path.normpath(os.path.realpath(path))
+    if not os.path.isfile(real):
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        shell32 = ctypes.WinDLL("shell32")
+        shell32.ILCreateFromPathW.restype = ctypes.c_void_p
+        shell32.ILCreateFromPathW.argtypes = [wintypes.LPCWSTR]
+        shell32.ILFree.argtypes = [ctypes.c_void_p]
+        shell32.SHOpenFolderAndSelectItems.restype = ctypes.c_long
+        shell32.SHOpenFolderAndSelectItems.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.c_void_p, wintypes.DWORD]
+        # Qt ana iş parçacığında COM zaten açıktır; değilse burada açılır (S_FALSE zararsız)
+        ctypes.WinDLL("ole32").CoInitializeEx(None, 2)  # COINIT_APARTMENTTHREADED
+        pidl = shell32.ILCreateFromPathW(real)
+        if not pidl:
+            return False
+        try:
+            return shell32.SHOpenFolderAndSelectItems(pidl, 0, None, 0) == 0
+        finally:
+            shell32.ILFree(pidl)
+    except (OSError, AttributeError):
+        return False
+
+
 def section_title(text: str) -> QLabel:
     label = QLabel(text.upper())
     label.setObjectName("sectionTitle")
@@ -1179,7 +1214,9 @@ class MainWindow(QMainWindow):
         )
 
     def _open_in_explorer(self, path: str) -> None:
-        command = explorer_command(path)
+        if shell_select(path):
+            return
+        command = explorer_command(path)  # yedek yol: dosya yoksa yalnızca klasör açılır
         if command is not None:
             subprocess.Popen(command)
         elif os.path.isdir(os.path.dirname(path)):

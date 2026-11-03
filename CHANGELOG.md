@@ -20,7 +20,8 @@
 
 **Düzeltmeler**
 - "Dosya konumunu aç" klasörü açıyor ama fotoğrafı seçmiyordu (Gezgin küçük harfe
-  çevrilmiş yolda dosyayı bulamıyor); artık fotoğraf seçili gelir. Dosya taşınmışsa
+  çevrilmiş yolda dosyayı bulamıyor); artık fotoğraf seçili gelir ve kalabalık bir
+  klasörde de görünür alana kaydırılır (Windows Kabuk API'si). Dosya taşınmışsa
   klasör açılır.
 - Fotoğraf kartındaki sağ tık menüsü siyah kutu olarak açılıyordu; menü artık okunur ve
   Windows koyu temadayken de uygulama açık renkli kalır.

@@ -566,3 +566,31 @@ def test_explorer_command_selects_file_with_real_case(tmp_path: Path):
     assert command[2].endswith("Tatil Klasörü" + os.sep + "IMG_0001.JPG")  # gerçek yazım
     photo.unlink()  # dosya taşınmışsa klasör açılır
     assert explorer_command(normalize_path(str(photo))) == ["explorer", os.path.realpath(photo.parent)]
+
+
+def test_open_in_explorer_prefers_shell_api_then_falls_back(app, tmp_path: Path, monkeypatch):
+    """Önce Kabuk API'si (kaydırarak seçer); başarısızsa explorer /select komutu."""
+    import subprocess
+
+    from benzerfoto.gui import main_window
+
+    w = _window_with_group(app, tmp_path, monkeypatch)
+    path = w.current_group.members[0].path
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **k: launched.append(cmd))
+
+    monkeypatch.setattr(main_window, "shell_select", lambda p: True)
+    w._open_in_explorer(path)
+    assert launched == []
+
+    monkeypatch.setattr(main_window, "shell_select", lambda p: False)
+    w._open_in_explorer(path)
+    expected = main_window.explorer_command(path)  # Windows dışında None: klasör Qt ile açılır
+    assert launched == ([expected] if expected else [])
+    w.close()
+
+
+def test_shell_select_rejects_missing_file(tmp_path: Path):
+    from benzerfoto.gui.main_window import shell_select
+
+    assert shell_select(str(tmp_path / "yok.jpg")) is False
