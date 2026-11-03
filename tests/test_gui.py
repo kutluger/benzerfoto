@@ -379,3 +379,77 @@ def test_delete_key_trashes_only_focused_photo(app, tmp_path: Path, monkeypatch)
     app.processEvents()
     assert sent == [[paths[1]]]
     w.close()
+
+
+def test_reviewed_groups_auto_mark_filter_and_persist(app, tmp_path: Path, monkeypatch):
+    from PySide6.QtCore import QThreadPool
+
+    from benzerfoto.gui.main_window import MainWindow
+
+    w = _window_with_two_groups(app, tmp_path, monkeypatch)
+    first, second = w.visible_groups
+    assert not first.reviewed and not second.reviewed
+    assert w.chip_open.text() == "İncelenmemiş (2)"
+
+    # Sonrakine geçince geçilen grup incelendi olur
+    w.group_view.setCurrentIndex(w.group_model.index(0))
+    w._step_group(1)
+    assert first.reviewed and w.current_group is second and not second.reviewed
+    assert w.chip_reviewed.text() == "İncelendi (1)"
+    assert not w.reviewed_button.isChecked()
+
+    # Seçim değişince grup incelendi olur; işaretler kaydedilir
+    kept = second.members[0].path
+    w._keep_only(kept)
+    assert second.reviewed and w.reviewed_button.isChecked()
+
+    # Elle kaldırma
+    w.reviewed_button.setChecked(False)
+    assert not second.reviewed
+    assert w.reviewed_groups() == [first]
+
+    # Filtre çipleri
+    w.chip_reviewed.setChecked(True)
+    assert w.visible_groups == [first]
+    w.chip_open.setChecked(True)
+    assert w.visible_groups == [second]
+    w.chip_all.setChecked(True)
+
+    # İncelenen gruplara uygula: yalnızca incelenen grubun işaretlileri işlenir
+    paths, _size, _skipped = w._collect_marked(w.reviewed_groups())
+    assert paths and set(paths) <= {m.path for m in first.members}
+    first_marks = set(first.marked)
+    w.close()
+
+    # Uygulama kapatılıp yeniden açılır, yeniden gruplanır: kararlar geri gelir
+    w2 = MainWindow(tmp_path / "db.sqlite", ini_settings(tmp_path))
+    w2.features = w.features
+    w2._regroup_all()
+    QThreadPool.globalInstance().waitForDone(10000)
+    app.processEvents()
+    by_first = {g.members[0].path: g for g in w2.groups_by_kind[GroupKind.SCENE]}
+    g1, g2 = by_first[first.members[0].path], by_first[second.members[0].path]
+    assert g1.reviewed and g1.marked == first_marks
+    assert not g2.reviewed  # elle kaldırılmıştı
+    assert g2.best_path == kept and kept not in g2.marked  # seçim yine de korunur
+    w2.close()
+
+
+def test_scope_dialog_offers_reviewed_groups(app, tmp_path: Path, monkeypatch):
+    w = _window_with_two_groups(app, tmp_path, monkeypatch)
+    first = w.visible_groups[0]
+    w._mark_reviewed(first)
+    seen = {}
+
+    def fake_exec(box):
+        seen["buttons"] = [b.text() for b in box.buttons()]
+        target = next(b for b in box.buttons() if b.text().startswith("İncelenen gruplara uygula"))
+        target.click()
+        return 0
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "exec", fake_exec)
+    from benzerfoto.journal import KIND_TRASH
+
+    assert w._ask_scope(KIND_TRASH) == [first]
+    assert any(t.startswith("İncelenen gruplara uygula (1 grup") for t in seen["buttons"])
+    w.close()

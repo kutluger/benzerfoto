@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from benzerfoto import __version__, actions, recycle, report
+from benzerfoto import __version__, actions, recycle, report, review
 from benzerfoto.cache import FeatureCache
 from benzerfoto.config import DUPLICATES_FOLDER_NAME, default_db_path
 from benzerfoto.features import ImageFeatures
@@ -282,9 +282,15 @@ class MainWindow(QMainWindow):
         chips.setSpacing(6)
         self.chip_all = QPushButton("Tümü")
         self.chip_open = QPushButton("İncelenmemiş")
-        self.chip_marked = QPushButton("İşaretli olan")
+        self.chip_reviewed = QPushButton("İncelendi")
+        self.chip_marked = QPushButton("İşaretli")
+        self.chip_open.setToolTip("Henüz incelenmemiş gruplar")
+        self.chip_reviewed.setToolTip(
+            "İncelenmiş gruplar: seçimini değiştirdiğiniz ya da Sonraki/Page Down ile geçtiğiniz gruplar"
+        )
+        self.chip_marked.setToolTip("En az bir fotoğrafı işaretli gruplar")
         self.chip_group = QButtonGroup(self)
-        for chip in (self.chip_all, self.chip_open, self.chip_marked):
+        for chip in (self.chip_all, self.chip_open, self.chip_reviewed, self.chip_marked):
             chip.setObjectName("chip")
             chip.setCheckable(True)
             self.chip_group.addButton(chip)
@@ -368,7 +374,15 @@ class MainWindow(QMainWindow):
         self.clear_button = QPushButton("Seçimi temizle")
         self.clear_button.setToolTip("Bu gruptaki hiçbir dosyayı ayırma")
         self.clear_button.clicked.connect(self._clear_marks)
-        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button):
+        self.reviewed_button = QPushButton("✓ İncelendi")
+        self.reviewed_button.setObjectName("reviewedToggle")
+        self.reviewed_button.setCheckable(True)
+        self.reviewed_button.setToolTip(
+            "Grubu incelendi olarak işaretle ya da işareti kaldır.\n"
+            "Seçimi değiştirince ya da Sonraki/Page Down ile geçince kendiliğinden işaretlenir."
+        )
+        self.reviewed_button.toggled.connect(self._on_reviewed_toggled)
+        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button, self.reviewed_button):
             hl.addWidget(b)
         lay.addWidget(header)
 
@@ -671,8 +685,12 @@ class MainWindow(QMainWindow):
         params = {k: self._group_params(k) for k in GroupKind}
         self.groups_title.setText("BULUNAN GRUPLAR · HESAPLANIYOR…")
 
+        db_path = self.db_path
+
         def work():
-            return {k: build_groups(features, k, **params[k]) for k in GroupKind}
+            groups = {k: build_groups(features, k, **params[k]) for k in GroupKind}
+            review.load_and_apply(db_path, groups)  # dünkü kararlar geri gelsin
+            return groups
 
         run_async(work, lambda res: self._on_groups_ready(request, res))
 
@@ -685,8 +703,15 @@ class MainWindow(QMainWindow):
         kind = self.current_kind()
         features = list(self.features)
         params = self._group_params(kind)
+        db_path = self.db_path
         self.groups_title.setText("BULUNAN GRUPLAR · HESAPLANIYOR…")
-        run_async(lambda: {kind: build_groups(features, kind, **params)}, lambda res: self._on_groups_ready(request, res))
+
+        def work():
+            groups = {kind: build_groups(features, kind, **params)}
+            review.load_and_apply(db_path, groups)
+            return groups
+
+        run_async(work, lambda res: self._on_groups_ready(request, res))
 
     def _on_groups_ready(self, request: int, result: dict) -> None:
         if request != self._group_request:
@@ -756,7 +781,9 @@ class MainWindow(QMainWindow):
         if query:
             groups = [g for g in groups if any(query in m.path.lower() for m in g.members)]
         if self.chip_open.isChecked():
-            groups = [g for g in groups if id(g) not in self.group_delegate.reviewed]
+            groups = [g for g in groups if not g.reviewed]
+        elif self.chip_reviewed.isChecked():
+            groups = [g for g in groups if g.reviewed]
         elif self.chip_marked.isChecked():
             groups = [g for g in groups if g.marked]
 
@@ -767,6 +794,7 @@ class MainWindow(QMainWindow):
         total = len(self.groups_by_kind[self.current_kind()])
         shown = f"{format_count(len(groups))} / {format_count(total)}" if len(groups) != total else format_count(total)
         self.groups_title.setText(f"BULUNAN GRUPLAR · {shown}")
+        self._update_review_counts()
 
         if not self.features:
             self.empty_label.setText("Klasör ekleyip TARA'ya basın.\nİlk tarama uzun sürebilir; sonrakiler önbellekten hızlı gelir.")
@@ -799,6 +827,8 @@ class MainWindow(QMainWindow):
     def _step_group(self, delta: int) -> None:
         if not self.visible_groups:
             return
+        if delta > 0 and self.current_group is not None:
+            self._mark_reviewed(self.current_group)  # sonrakine geçilen grup incelenmiş sayılır
         row = self.group_view.currentIndex().row() + delta
         row = max(0, min(len(self.visible_groups) - 1, row))
         self.group_view.setCurrentIndex(self.group_model.index(row))
@@ -806,8 +836,9 @@ class MainWindow(QMainWindow):
     def _show_group(self, group: PhotoGroup | None) -> None:
         self.current_group = group
         has = group is not None
-        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button):
+        for b in (self.prev_button, self.next_button, self.reset_button, self.clear_button, self.reviewed_button):
             b.setEnabled(has)
+        self._sync_reviewed_button()
         if not has:
             self.kind_tag.hide()
             self.group_label.setText("Grup seçilmedi")
@@ -817,7 +848,6 @@ class MainWindow(QMainWindow):
             self.details.show_item(None, None)
             self._update_summary()
             return
-        self.group_delegate.reviewed.add(id(group))
         bg, fg = TAG_COLORS[group.kind.value]
         self.kind_tag.setText(group.kind.label.upper())
         self.kind_tag.setStyleSheet(f"background: {bg}; color: {fg};")
@@ -838,6 +868,7 @@ class MainWindow(QMainWindow):
         group = self.current_group
         if group is None:
             return
+        self._sync_reviewed_button()
         self.grid.update_states(group, self.focused_path)
         self.details.show_item(self._item(self.focused_path), group)
         row = self.group_view.currentIndex().row()
@@ -892,6 +923,7 @@ class MainWindow(QMainWindow):
             group.marked.discard(path)
         if on and len(group.marked) == len(group.members):
             QMessageBox.warning(self, "BenzerFoto", "Gruptaki tüm fotoğrafları işaretlediniz. En az birini tutmanız önerilir.")
+        self._mark_reviewed(group)
         self._refresh_current_group()
 
     def _step_photo(self, delta: int) -> None:
@@ -918,16 +950,19 @@ class MainWindow(QMainWindow):
             return
         group.best_path = path
         group.marked = {m.path for m in group.members if m.path != path and m.path not in group.protected}
+        self._mark_reviewed(group)
         self._refresh_current_group()
 
     def _reset_marks(self) -> None:
         if self.current_group:
             choose_best(self.current_group, self._folders(FOLDER_PROTECT))
+            self._mark_reviewed(self.current_group)
             self._refresh_current_group()
 
     def _clear_marks(self) -> None:
         if self.current_group:
             self.current_group.marked.clear()
+            self._mark_reviewed(self.current_group)
             self._refresh_current_group()
 
     def _trash_focused(self) -> None:
@@ -984,6 +1019,53 @@ class MainWindow(QMainWindow):
             15000,
         )
 
+    # ------------------------------------------------------------------
+    # İnceleme durumu
+    # ------------------------------------------------------------------
+
+    def _save_review(self, group: PhotoGroup) -> None:
+        try:
+            with review.ReviewStore(self.db_path) as store:
+                store.save_group(group)
+        except Exception as exc:  # kayıt yazılamazsa çalışma sürer, kullanıcı uyarılır
+            self.statusBar().showMessage(f"İnceleme durumu kaydedilemedi: {exc}", 15000)
+
+    def _mark_reviewed(self, group: PhotoGroup) -> None:
+        """Grubu incelendi yapar; işaretleri de kaydeder (yarın kaldığı yerden devam)."""
+        group.reviewed = True
+        self._save_review(group)
+        self._after_review_change(group)
+
+    def _on_reviewed_toggled(self, on: bool) -> None:
+        group = self.current_group
+        if group is None or group.reviewed == on:
+            return
+        group.reviewed = on
+        self._save_review(group)
+        self._after_review_change(group)
+
+    def _after_review_change(self, group: PhotoGroup) -> None:
+        if group is self.current_group:
+            self._sync_reviewed_button()
+        if group in self.visible_groups:
+            self.group_model.refresh_row(self.visible_groups.index(group))
+        self._update_review_counts()
+
+    def _sync_reviewed_button(self) -> None:
+        group = self.current_group
+        self.reviewed_button.blockSignals(True)
+        self.reviewed_button.setChecked(bool(group and group.reviewed))
+        self.reviewed_button.blockSignals(False)
+
+    def reviewed_groups(self) -> list[PhotoGroup]:
+        return [g for g in self.groups_by_kind[self.current_kind()] if g.reviewed]
+
+    def _update_review_counts(self) -> None:
+        groups = self.groups_by_kind[self.current_kind()]
+        done = sum(1 for g in groups if g.reviewed)
+        self.chip_open.setText(f"İncelenmemiş ({format_count(len(groups) - done)})" if groups else "İncelenmemiş")
+        self.chip_reviewed.setText(f"İncelendi ({format_count(done)})" if groups else "İncelendi")
+
     def _open_in_explorer(self, path: str) -> None:
         if sys.platform == "win32":
             subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
@@ -1018,10 +1100,12 @@ class MainWindow(QMainWindow):
         return paths, size, skipped
 
     def _ask_scope(self, kind: str) -> list[PhotoGroup] | None:
-        """İşlemin kapsamını sorar: tüm gruplar ya da yalnızca seçili grup."""
+        """İşlemin kapsamını sorar: tüm gruplar, incelenen gruplar ya da yalnızca seçili grup."""
         all_groups = self.groups_by_kind[self.current_kind()]
         all_paths, all_size, skipped = self._collect_marked(all_groups)
         here_paths, here_size, _ = self._collect_marked([self.current_group] if self.current_group else [])
+        reviewed = self.reviewed_groups()
+        rev_paths, rev_size, _ = self._collect_marked(reviewed)
 
         box = QMessageBox(self)
         box.setWindowTitle("BenzerFoto")
@@ -1045,6 +1129,13 @@ class MainWindow(QMainWindow):
             f"Tüm gruplar ({format_count(len(all_paths))} dosya · {format_size(all_size)})",
             QMessageBox.ButtonRole.AcceptRole,
         )
+        reviewed_btn = None
+        if rev_paths and len(rev_paths) != len(all_paths):
+            reviewed_btn = box.addButton(
+                f"İncelenen gruplara uygula ({format_count(len(reviewed))} grup · "
+                f"{format_count(len(rev_paths))} dosya · {format_size(rev_size)})",
+                QMessageBox.ButtonRole.AcceptRole,
+            )
         here_btn = None
         if here_paths and len(here_paths) != len(all_paths):
             here_btn = box.addButton(
@@ -1053,11 +1144,13 @@ class MainWindow(QMainWindow):
             )
         box.addButton("Vazgeç", QMessageBox.ButtonRole.RejectRole)
         all_btn.setEnabled(bool(all_paths))
-        box.setDefaultButton(here_btn or all_btn)
+        box.setDefaultButton(here_btn or reviewed_btn or all_btn)
         box.exec()
         clicked = box.clickedButton()
         if clicked is all_btn:
             return all_groups
+        if reviewed_btn is not None and clicked is reviewed_btn:
+            return reviewed
         if here_btn is not None and clicked is here_btn:
             return [self.current_group]
         return None

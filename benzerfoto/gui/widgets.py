@@ -38,7 +38,7 @@ from benzerfoto.features import ImageFeatures
 from benzerfoto.formatting import format_date, format_size, format_time
 from benzerfoto.grouping import GroupKind, PhotoGroup
 from benzerfoto.gui.images import ThumbnailCache
-from benzerfoto.gui.style import ACCENT, TAG_COLORS
+from benzerfoto.gui.style import ACCENT, OK, TAG_COLORS
 
 
 def group_title(group: PhotoGroup) -> str:
@@ -104,7 +104,6 @@ class GroupDelegate(QStyledItemDelegate):
     def __init__(self, thumbs: ThumbnailCache, parent=None):
         super().__init__(parent)
         self.thumbs = thumbs
-        self.reviewed: set[int] = set()  # incelenmiş grupların id()'leri
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802
         return QSize(300, self.ROW_HEIGHT)
@@ -119,6 +118,8 @@ class GroupDelegate(QStyledItemDelegate):
         painter.fillRect(r, QColor("#eef4ff") if selected else QColor("white"))
         if selected:
             painter.fillRect(QRect(r.left(), r.top(), 3, r.height()), QColor(ACCENT))
+        elif group.reviewed:
+            painter.fillRect(QRect(r.left(), r.top(), 3, r.height()), QColor(OK))
         painter.setPen(QColor("#f0f0f0"))
         painter.drawLine(r.bottomLeft(), r.bottomRight())
 
@@ -167,9 +168,17 @@ class GroupDelegate(QStyledItemDelegate):
         sub = f"{len(group.members)} dosya · {format_size(group.total_size)}"
         if group.marked:
             sub += f" · {len(group.marked)} işaretli"
-        if id(group) in self.reviewed:
-            sub += " · ✓"
-        painter.drawText(QRect(text_left, r.top() + 33, text_width, 20), Qt.AlignmentFlag.AlignLeft, sub)
+        sub_rect = QRect(text_left, r.top() + 33, text_width, 20)
+        if group.reviewed:
+            # Yeşil "✓ İncelendi" önde, ayrıntılar arkasında
+            done = "✓ İncelendi  "
+            painter.setPen(QColor(OK))
+            painter.drawText(sub_rect, Qt.AlignmentFlag.AlignLeft, done)
+            shift = painter.fontMetrics().horizontalAdvance(done)
+            sub_rect.adjust(shift, 0, 0, 0)
+            painter.setPen(QColor("#666666"))
+        sub = painter.fontMetrics().elidedText(sub, Qt.TextElideMode.ElideRight, sub_rect.width())
+        painter.drawText(sub_rect, Qt.AlignmentFlag.AlignLeft, sub)
         painter.restore()
 
 
@@ -351,6 +360,9 @@ class ThumbnailGrid(QScrollArea):
 
     def show_group(self, group: PhotoGroup | None, focused_path: str | None) -> None:
         for card in self.cards.values():
+            # deleteLater olay döngüsünü bekler; o ana kadar eski kart görünmesin
+            self._grid.removeWidget(card)
+            card.hide()
             card.deleteLater()
         self.cards.clear()
         self.thumbs.clear_pending()

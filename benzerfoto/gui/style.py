@@ -67,6 +67,7 @@ QPushButton#primary {{ background: {ACCENT}; color: white; border-color: {ACCENT
 QPushButton#primary:disabled {{ background: #93b4f5; color: #eef4ff; border-color: #93b4f5; }}
 QPushButton#chip {{ border-radius: 11px; padding: 3px 10px; background: #ffffff; border: 1px solid #d0d7de; }}
 QPushButton#chip:checked {{ background: #1f2328; color: white; border-color: #1f2328; }}
+QPushButton#reviewedToggle:checked {{ background: #dcfce7; color: #166534; border-color: {OK}; font-weight: 600; }}
 
 QRadioButton {{ padding: 5px 6px; border-radius: 6px; }}
 QRadioButton:checked {{ background: #eef4ff; font-weight: 600; }}
