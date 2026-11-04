@@ -1,6 +1,5 @@
 """Uygulama genelindeki sabitler ve varsayılan ayarlar."""
 
-import os
 from pathlib import Path
 
 # Taranacak dosya uzantıları (küçük harf). RAW şimdilik kapsam dışı.
@@ -25,11 +24,11 @@ DB_BATCH_SIZE = 200
 
 
 def default_db_path() -> Path:
-    """Önbellek veritabanının varsayılan konumunu döndürür.
+    """Önbellek veritabanının konumunu döndürür.
 
-    Windows'ta %LOCALAPPDATA%\\BenzerFoto\\benzerfoto.db, diğer sistemlerde
-    ~/.benzerfoto/benzerfoto.db kullanılır.
+    Paketlenmiş EXE'de program klasöründeki `veri\\benzerfoto.db` (taşınabilir mod),
+    kaynaktan çalışırken %LOCALAPPDATA%\\BenzerFoto\\benzerfoto.db. Ayrıntı: paths.py
     """
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    base = Path(local_app_data) / "BenzerFoto" if local_app_data else Path.home() / ".benzerfoto"
-    return base / "benzerfoto.db"
+    from benzerfoto.paths import prepare_location
+
+    return prepare_location().db_path

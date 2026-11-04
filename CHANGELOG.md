@@ -1,5 +1,17 @@
 # Sürüm notları
 
+## 1.0.0 (hazırlanıyor)
+
+**Yeni**
+- Taşınabilir mod: EXE ayarları (`ayarlar.ini`) ve önbellek veritabanını kendi
+  klasöründeki `veri` klasöründe tutar; USB bellekteki klasör her bilgisayarda aynı
+  ayarlarla çalışır. İlk açılışta eski ayarlar ve önbellek bir kez buraya kopyalanır.
+  Program klasörü yazılamıyorsa eski konum kullanılır. `benzerfoto-cli info` veri
+  klasörünü gösterir.
+- Zip'te yeni BENIOKU.txt: nasıl açılır, indirilen zip'te "Engellemeyi kaldır" adımı,
+  taşınabilir kullanım.
+- `paketle.py` yeniden paketlerken `dist\BenzerFoto\veri` klasörünü korur ve zip'e koymaz.
+
 ## 0.9.0
 
 **Yeni**

@@ -20,7 +20,20 @@ Sürüm notları: [CHANGELOG.md](CHANGELOG.md)
 
 ## Hazır paket (EXE, Python gerekmez)
 
-`BenzerFoto-0.9.0-win64.zip` dosyasını bir klasöre açın, **BenzerFoto.exe**'ye çift tıklayın.
+`BenzerFoto-<sürüm>-win64.zip` dosyasını bir klasöre açın, **BenzerFoto.exe**'ye çift tıklayın.
+Zip'in içindeki **BENIOKU.txt** aynı bilgileri kısaca anlatır.
+
+Zip e-posta, WhatsApp ya da tarayıcıyla indirildiyse Windows ona "internetten geldi"
+işareti koyar ve program engellenebilir. Zip'i çıkarmadan önce sağ tıklayın,
+**Özellikler**'de en alttaki **Engellemeyi kaldır** kutusunu işaretleyip Tamam'a basın.
+
+**Taşınabilir:** EXE ayarlarını ve tarama önbelleğini kendi yanındaki `veri` klasöründe
+tutar, bilgisayara bir şey yazmaz. Klasör USB belleğe kopyalanıp başka bilgisayarda aynı
+ayarlarla kullanılabilir. İlk açılışta, varsa eski konumdaki (`%LOCALAPPDATA%\BenzerFoto`
+ve kayıt defteri) ayarlar ve önbellek bir kez `veri` klasörüne kopyalanır. Program klasörü
+yazılamıyorsa (ör. Program Files) eski konum kullanılır. Programı başkasına verirken
+`veri` klasörünü vermeyin; `paketle.py` onu zip'e koymaz. Python ile kaynaktan
+çalıştırınca (`baslat.bat`) veriler eskisi gibi `%LOCALAPPDATA%\BenzerFoto`'da kalır.
 
 Windows 11'in **Akıllı Uygulama Denetimi** imzasız programları engelleyebilir
 (“Uygulama Denetimi ilkesi bu dosyayı engelledi”). Bu durumda güvenlik ayarını
@@ -169,7 +182,8 @@ python packaging\paketle.py
 
 ```
 benzerfoto/
-  config.py     sabitler, varsayılan önbellek konumu
+  config.py     sabitler, önbellek konumu
+  paths.py      veri klasörü: taşınabilir mod (EXE yanında veri\) ya da %LOCALAPPDATA%
   discovery.py  klasörlerde gezinme, hariç tutma
   features.py   bir fotoğraftan hash, pHash/dHash, EXIF, netlik çıkarma
   cache.py      SQLite önbellek
