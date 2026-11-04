@@ -98,6 +98,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 
 def cmd_info(args: argparse.Namespace) -> int:
+    from benzerfoto.paths import resolve_location
+
+    location = resolve_location()
+    mode = "taşınabilir, program klasöründe" if location.portable else "bu bilgisayarda"
+    print(f"Veri klasörü: {location.folder} ({mode})")
     if not Path(args.db).exists():
         print(f"Önbellek henüz oluşturulmamış: {args.db}")
         return 0
