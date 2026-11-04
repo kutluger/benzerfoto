@@ -1,6 +1,6 @@
 # Sürüm notları
 
-## 1.0.0 (hazırlanıyor)
+## 1.0.0
 
 **Yeni**
 - Taşınabilir mod: EXE ayarları (`ayarlar.ini`) ve önbellek veritabanını kendi

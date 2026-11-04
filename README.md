@@ -15,6 +15,7 @@ Geri Dönüşüm Kutusu'na gönderilir, her işlem geri alınabilir.
 | 4 | Taşıma, geri dönüşüm, işlem günlüğü, geri alma | ✅ |
 | 5 | Rapor, ayarlar, EXE paketleme (beta 0.5.0) | ✅ |
 | 0.9 | Klavye kısayolları, incelenen gruplara uygulama, grubun tamamını gönderme, BF logosu | ✅ |
+| 1.0 | Taşınabilir mod (ayarlar ve önbellek program klasöründe), BENİOKU | ✅ |
 
 Sürüm notları: [CHANGELOG.md](CHANGELOG.md)
 

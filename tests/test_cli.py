@@ -10,11 +10,11 @@ from benzerfoto import __version__
 from benzerfoto.cli import build_parser, main
 
 
-def test_version_is_beta(capsys):
+def test_version(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
-    assert "0.9.0" in capsys.readouterr().out
-    assert __version__ == "0.9.0"
+    assert "1.0.0" in capsys.readouterr().out
+    assert __version__ == "1.0.0"
 
 
 def test_settings_file_option(tmp_path: Path):
